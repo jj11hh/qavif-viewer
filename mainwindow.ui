@@ -18,7 +18,7 @@
     <item>
      <layout class="QHBoxLayout" name="horizontalLayout">
       <item>
-       <widget class="MyGraphicsView" name="m_graphicsView">
+       <widget class="ImageView" name="m_graphicsView">
         <property name="verticalScrollBarPolicy">
          <enum>Qt::ScrollBarAlwaysOn</enum>
         </property>
@@ -37,7 +37,7 @@
      <x>0</x>
      <y>0</y>
      <width>800</width>
-     <height>25</height>
+     <height>26</height>
     </rect>
    </property>
    <widget class="QMenu" name="menuFile">
@@ -69,16 +69,16 @@
   </action>
   <action name="actionAbout">
    <property name="text">
-    <string>About</string>
+    <string>About Qavif</string>
    </property>
   </action>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
  <customwidgets>
   <customwidget>
-   <class>MyGraphicsView</class>
+   <class>ImageView</class>
    <extends>QGraphicsView</extends>
-   <header>mygraphicsview.h</header>
+   <header>imageview.h</header>
   </customwidget>
  </customwidgets>
  <resources/>

@@ -4,9 +4,12 @@
 
 #include <QFileDialog>
 #include <QStandardPaths>
+#include <QFileInfo>
 
+#include <QGraphicsPixmapItem>
 #include <QImageReader>
 #include <QImageWriter>
+#include <QDebug>
 
 #include <QMessageBox>
 
@@ -16,7 +19,7 @@ MainWindow::MainWindow(QWidget *parent) :
     lastOpenPath("")
 {
     ui->setupUi(this);
-
+    setWindowIcon(QIcon(":/Images/icon.png"));
     m_graphicsScene = new QGraphicsScene();
     m_graphicsScene->setItemIndexMethod(QGraphicsScene::NoIndex);
     QImage bground(50, 50, QImage::Format_RGB888);
@@ -34,7 +37,9 @@ MainWindow::MainWindow(QWidget *parent) :
 
     ui->m_graphicsView->setScene(m_graphicsScene);
 
-    ui->statusBar->showMessage("ready", 0);
+    ui->statusBar->showMessage(tr("ready"), 0);
+    connect(ui->m_graphicsView, &ImageView::nextImage, this, &MainWindow::nextImage);
+    connect(ui->m_graphicsView, &ImageView::prevImage, this, &MainWindow::prevImage);
 }
 
 MainWindow::~MainWindow()
@@ -44,12 +49,14 @@ MainWindow::~MainWindow()
 
 void MainWindow::openImage()
 {
-    if (! lastOpenPath.length()){
-        lastOpenPath = QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
+    if (! lastOpenPath.has_value()){
+        lastOpenPath =
+            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
     }
+
     QString qStrFilePath = QFileDialog::getOpenFileName(this,
         tr("Open Image"),
-        lastOpenPath,
+        lastOpenPath.value(),
         tr("Image Files (*.png *.jpg *.bmp *.avif)"));
 
     if (qStrFilePath.isEmpty())
@@ -64,10 +71,19 @@ void MainWindow::openImage()
 }
 
 bool MainWindow::loadImage(const QString &path){
+    qDebug() << "loading " << path;
+
+    currentPath = path;
+    currentDir = QFileInfo(path).absoluteDir();
     MyImageReader reader(path);
     QImage qimg = reader.read();
     if (qimg.isNull())
     {
+        ui->statusBar->showMessage(tr("load failed ") + path, 0);
+        if (!m_graphicsScene->sceneRect().isEmpty())
+        {
+            m_graphicsScene->clear();
+        }
         return false;
     }
     if (!m_graphicsScene->sceneRect().isEmpty())
@@ -75,15 +91,67 @@ bool MainWindow::loadImage(const QString &path){
         m_graphicsScene->clear();
     }
     m_graphicsScene->setSceneRect(qimg.rect());
-    m_graphicsScene->addPixmap(QPixmap::fromImage(qimg));
+
+    auto item = new QGraphicsPixmapItem(QPixmap::fromImage(qimg));
+    item->setTransformationMode(Qt::SmoothTransformation);
+    m_graphicsScene->addItem(item);
 
     ui->m_graphicsView->viewFit();
 
-    ui->statusBar->showMessage(tr("image loaded"), 0);
+    ui->statusBar->showMessage(tr("image loaded ") + path, 0);
 
     return true;
 }
 
+void MainWindow::nextImage(){
+    if (! currentDir.has_value())
+        return;
+    QStringList filter = {"*.jpe", "*.jpeg", "*.jpg", "*.bmp", "*.png", "*.avif"};
+    QStringList images = currentDir.value().entryList(filter, QDir::Files, QDir::Name);
+    qDebug() << images.join(", ");
+    if (images.length() == 0)
+        return;
+
+    std::vector<QString *> vec;
+    for (auto iter = images.begin(); iter != images.end(); ++iter){
+        vec.push_back(&*iter);
+    }
+
+    size_t found = 0;
+    for (size_t i = 0; i < vec.size(); i ++){
+        if (vec[i] == QFileInfo(currentPath.value()).fileName()){
+            found = i;
+        }
+    }
+    if (++ found >= vec.size())
+        found = 0;
+
+    loadImage(currentDir.value().path() + '/' + *vec[found]);
+}
+void MainWindow::prevImage(){
+    if (! currentDir.has_value())
+        return;
+    QStringList filter = {"*.jpe", "*.jpeg", "*.jpg", "*.bmp", "*.png", "*.avif"};
+    QStringList images = currentDir.value().entryList(filter, QDir::Files, QDir::Name);
+    if (images.length() == 0)
+        return;
+
+    std::vector<QString *> vec;
+    for (auto iter = images.begin(); iter != images.end(); ++iter){
+        vec.push_back(&*iter);
+    }
+
+    std::intptr_t found = 0;
+    for (size_t i = 0; i < vec.size(); i ++){
+        if (vec[i] == QFileInfo(currentPath.value()).fileName()){
+            found = i;
+        }
+    }
+    if (-- found < 0)
+        found = vec.size() - 1;
+
+    loadImage(currentDir.value().path() + '/' + *vec[found]);
+}
 void MainWindow::saveImage()
 {
     if (m_graphicsScene->sceneRect().isEmpty())

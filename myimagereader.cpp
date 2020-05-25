@@ -4,6 +4,7 @@
 
 MyImageReader::MyImageReader(const QString &fileName)
 {
+    reader = nullptr;
     if (fileName.endsWith(".avif")){
         format = "avif";
         path = fileName;

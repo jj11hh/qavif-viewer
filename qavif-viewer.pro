@@ -5,6 +5,7 @@
 #-------------------------------------------------
 
 QT       += core gui
+CONFIG   += c++17
 
 greaterThan(QT_MAJOR_VERSION, 4): QT += widgets
 
@@ -24,26 +25,34 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 
 SOURCES += main.cpp\
-        mainwindow.cpp \
-    mygraphicsview.cpp \
+    imageview.cpp \
+    mainwindow.cpp \
     myimagereader.cpp
 
 HEADERS  += mainwindow.h \
-    mygraphicsview.h \
+    imageview.h \
     myimagereader.h
 
-LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/libavif/" -lavif -lrav1e -ldav1d -laom
+LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/libavif/" -lavif -laom -ldav1d -lrav1e
 INCLUDEPATH += $$_PRO_FILE_PWD_/thirdparty/libavif/include/avif
 
 FORMS    += mainwindow.ui
+TRANSLATIONS = app_zh_CN.ts
 
 win32-msvc* {
     QMAKE_CXXFLAGS += /utf-8
     LIBS += -lws2_32 -ladvapi32 -lpsapi -lUserenv
+    RC_ICONS = Images/icon.ico
 }
 
 unix {
     LIBS += -ldl
 }
+
+DISTFILES += \
+    app_zh_CN.qm
+
+RESOURCES += \
+    resouce.qrc
 
 
