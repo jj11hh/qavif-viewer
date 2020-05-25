@@ -132,7 +132,7 @@ void MainWindow::on_actionSave_triggered()
 
 void MainWindow::about(){
     QMessageBox::about(this, tr("About Qavif Viewer"),
-            tr("<p>The <b>Qavif Viewer</b> is a simple image viewer"
+            tr("<p>The <b>Qavif Viewer</b> is a simple image viewer "
                "that supports avif</p>"
                "<p>Author: Jiang Yiheng, https://github.com/jj11hh/qavif-viewer</p>"
                "<p>Copyright 2020 Jiang Yiheng</p>"
