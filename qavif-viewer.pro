@@ -43,7 +43,7 @@ HEADERS  += mainwindow.h \
     mygraphicsview.h \
     myimagereader.h
 
-LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/lib" -lavif -laom -ldav1d -lrav1e -lturbojpeg-static
+LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/lib" -lavif -laom -ldav1d -lrav1e -lturbojpeg
 INCLUDEPATH += $$_PRO_FILE_PWD_/thirdparty/include
 
 FORMS    += mainwindow.ui \

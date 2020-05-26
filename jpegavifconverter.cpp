@@ -113,8 +113,9 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
             icc += jpegReader.read();
             qDebug() << "ICC read, " << icc.length() << "bytes";
         }
-
-        jpegReader.skip();
+        else {
+            jpegReader.skip();
+        }
     }
 
     yuv_format = format_j2a(subsample);
@@ -125,7 +126,6 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     }
 
     auto avifImage = avifImageCreate(width, height, depth, yuv_format);
-                                                                    // [open] avifImage
 
     // Copy ICC and EXIF
     if (icc.length()){
@@ -140,6 +140,10 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
             static_cast<std::make_unsigned<int>::type>(exif.length()));
     }
 
+    // SRGB color space
+    avifImage->colorPrimaries = (avifColorPrimaries)1;
+    avifImage->transferCharacteristics = (avifTransferCharacteristics)13;
+    avifImage->matrixCoefficients = (avifMatrixCoefficients)5;
     // Let's try to decode/encode it in YUV PLANES WAY
 
     // First, allocate memory for planes
@@ -199,7 +203,7 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     if (! encoder) {
         qCritical("can't create avif encoder");
         avifImageDestroy(avifImage);
-        avifFile.close();
+        return false;
     }
     encoder->maxThreads = QThread::idealThreadCount();
     encoder->minQuantizer = settings.minQuantizer;
@@ -220,7 +224,6 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
         avifImageDestroy(avifImage);
         avifRWDataFree(&raw);
         avifEncoderDestroy(encoder);
-        avifFile.close();
         return false;
     }
 
@@ -230,7 +233,6 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     avifImageDestroy(avifImage);
     avifRWDataFree(&raw);
     avifEncoderDestroy(encoder);
-    avifFile.close();
 
     if (write_size != should_write) {
         qCritical("wrote size don't match file size");
@@ -442,6 +444,11 @@ bool JpegAvifConverter::ImageToAvif(QImage &image, const QString &path) const {
 
     rgb.pixels = image.bits();
     rgb.rowBytes = image.bytesPerLine();
+
+    // SRGB color space
+    dimage->colorPrimaries = AVIF_COLOR_PRIMARIES_IEC61966_2_4;
+    dimage->transferCharacteristics
+            = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
 
     avifImageRGBToYUV(dimage, &rgb);
 
