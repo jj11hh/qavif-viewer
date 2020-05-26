@@ -36,6 +36,10 @@ private slots:
     void on_actionAbout_triggered();
     void nextImage();
     void prevImage();
+    void onResized(qreal factor);
+    void on_BtnFitWindow_clicked();
+    void on_BtnOriginalSize_clicked();
+    void on_SlZoom_valueChanged(int value);
 };
 
 #endif // MAINWINDOW_H

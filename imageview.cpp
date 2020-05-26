@@ -1,6 +1,7 @@
 ﻿#include "imageview.h"
 #include <QGraphicsPixmapItem>
 #include <QDebug>
+#include <QtMath>
 
 ImageView::ImageView(QWidget *parent)
 	: QGraphicsView(parent)
@@ -33,7 +34,8 @@ void ImageView::zoomOut()
 void ImageView::viewFit()
 {
 	fitInView(sceneRect(), Qt::KeepAspectRatio);
-	isResized = true;
+    updateScale();
+    isResized = true;
 
 	if (sceneRect().width() > sceneRect().height())
 		isLandscape = true;
@@ -84,13 +86,13 @@ void ImageView::scaleView(qreal scaleFactor)
 
     if (expRectLength < viewportLength / 2) // minimum zoom : half of viewport
 	{
-		if (!isResized || scaleFactor < 1)
-			return;
+        if (!isResized || scaleFactor < 1)
+            scaleFactor = scaleFactor * (viewportLength/2 / expRectLength);
 	}
-    else if (expRectLength > imgLength * 10) // maximum zoom : x10
+    else if (expRectLength > imgLength * 3) // maximum zoom : x3
 	{
 		if (!isResized || scaleFactor > 1)
-			return;
+            scaleFactor = scaleFactor * (imgLength*3 / expRectLength);
 	}
 	else
 	{
@@ -99,6 +101,19 @@ void ImageView::scaleView(qreal scaleFactor)
 
 
 	scale(scaleFactor, scaleFactor);
+    updateScale();
+}
+
+void ImageView::setScale(qreal factor){
+    resetMatrix();
+
+    scaleView(factor);
+    updateScale();
+}
+
+void ImageView::updateScale(){
+    auto trans = transform();
+    emit resized(qreal(sqrt(trans.m11() * trans.m11() + trans.m12() * trans.m12())));
 }
 
 void ImageView::resizeEvent(QResizeEvent *event)

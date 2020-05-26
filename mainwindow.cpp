@@ -10,6 +10,7 @@
 #include <QImageReader>
 #include <QImageWriter>
 #include <QDebug>
+#include <QtMath>
 
 #include <QMessageBox>
 
@@ -40,6 +41,9 @@ MainWindow::MainWindow(QWidget *parent) :
     ui->statusBar->showMessage(tr("ready"), 0);
     connect(ui->m_graphicsView, &ImageView::nextImage, this, &MainWindow::nextImage);
     connect(ui->m_graphicsView, &ImageView::prevImage, this, &MainWindow::prevImage);
+    connect(ui->m_graphicsView, &ImageView::resized, this, &MainWindow::onResized);
+
+    ui->m_graphicsView->viewFit();
 }
 
 MainWindow::~MainWindow()
@@ -198,6 +202,11 @@ void MainWindow::on_actionSave_triggered()
     saveImage();
 }
 
+void MainWindow::onResized(qreal factor){
+    ui->LbZoom->setText(QString::number(int(factor * 100)) + "%");
+    ui->SlZoom->setValue(int(factor * 100));
+}
+
 void MainWindow::about(){
     QMessageBox::about(this, tr("About Qavif Viewer"),
             tr("<p>The <b>Qavif Viewer</b> is a simple image viewer "
@@ -235,4 +244,19 @@ void MainWindow::about(){
 void MainWindow::on_actionAbout_triggered()
 {
     about();
+}
+
+void MainWindow::on_BtnFitWindow_clicked()
+{
+    ui->m_graphicsView->viewFit();
+}
+
+void MainWindow::on_BtnOriginalSize_clicked()
+{
+    ui->m_graphicsView->setScale(1.0);
+}
+
+void MainWindow::on_SlZoom_valueChanged(int value)
+{
+    ui->m_graphicsView->setScale(value / 100.0);
 }

@@ -14,13 +14,16 @@ public:
 	void viewFit();
     void zoomIn();
     void zoomOut();
+    void setScale(qreal);
 
 signals:
     void nextImage();
     void prevImage();
+    void resized(qreal);
 
 private:
     void scaleView(qreal scaleFactor);
+    void updateScale();
     bool isResized;
 	bool isLandscape;
 

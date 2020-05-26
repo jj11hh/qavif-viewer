@@ -41,12 +41,10 @@ QImage MyImageReader::read(){
     avifResult decodeResult = avifDecoderRead(decoder, aimage, &rawdata);
     int width;
     int height;
-    int depth;
 
     if (decodeResult == AVIF_RESULT_OK){
         width = (int) aimage->width;
         height = (int) aimage->height;
-        depth = (int) aimage->depth;
         avifRGBImage rgb;
         avifRGBImageSetDefaults(&rgb, aimage);
         rgb.format = AVIF_RGB_FORMAT_RGB;
