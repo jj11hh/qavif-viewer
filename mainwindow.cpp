@@ -1,15 +1,22 @@
 ﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "myimagereader.h"
+#include "dialogsettings.h"
+#include "imgconvsettings.h"
+#include "jpegavifconverter.h"
 
 #include <QFileDialog>
 #include <QStandardPaths>
 #include <QFileInfo>
+#include <QProgressDialog>
+#include <QtConcurrent/QtConcurrentRun>
 
 #include <QGraphicsPixmapItem>
 #include <QImageReader>
 #include <QImageWriter>
 #include <QDebug>
+#include <QRegExp>
+#include <QThread>
 #include <QtMath>
 
 #include <QMessageBox>
@@ -37,6 +44,9 @@ MainWindow::MainWindow(QWidget *parent) :
     m_graphicsScene->setBackgroundBrush(QPixmap::fromImage(bground));
 
     ui->m_graphicsView->setScene(m_graphicsScene);
+
+    ui->m_graphicsView->setHorizontalScrollBarPolicy ( Qt::ScrollBarAlwaysOff );
+    ui->m_graphicsView->setVerticalScrollBarPolicy ( Qt::ScrollBarAlwaysOff );
 
     ui->statusBar->showMessage(tr("ready"), 0);
     connect(ui->m_graphicsView, &ImageView::nextImage, this, &MainWindow::nextImage);
@@ -158,33 +168,89 @@ void MainWindow::prevImage(){
 }
 void MainWindow::saveImage()
 {
-    if (m_graphicsScene->sceneRect().isEmpty())
+    if (!currentPath.has_value())
         return;
-
-    m_graphicsScene->clearSelection();
-    QImage img(m_graphicsScene->sceneRect().size().toSize(), QImage::Format_RGB888);
-    QPainter painter(&img);
-    m_graphicsScene->render(&painter);
 
     QString qStrFilePath = QFileDialog::getSaveFileName(this,
             tr("Save Image"),
             QStandardPaths::writableLocation(QStandardPaths::PicturesLocation).replace("cache", "newfile.jpg"),
-            tr("JPG file (*.jpg);;PNG file (*.png);;BMP file (*.bmp)"));
+            tr("JPG file (*.jpg);;PNG file (*.png);;BMP file (*.bmp);;AVIF file (*.avif)"));
 
     if (qStrFilePath.isEmpty())
         return;
 
-    QImageWriter writer(qStrFilePath);
-    if(!writer.canWrite())
-    {
-        QMessageBox msgBox;
-        msgBox.setText("Cannot write file");
-        msgBox.exec();
-        return;
-    }
-    writer.write(img);
+    assert(currentPath.has_value());
+    if (qStrFilePath.endsWith(".avif")){
+        auto dialogSettings = DialogSettings(this, ImgConvSettings());
+        dialogSettings.exec();
 
-    ui->statusBar->showMessage("image saved", 0);
+        if (!dialogSettings.getAccepted()){
+            return;
+        }
+        auto settings = dialogSettings.getSettings();
+        auto convertor = JpegAvifConverter(settings);
+
+        // It will be slow, show a progress bar and run in another thread
+
+        QProgressDialog progress(tr("Converting files..."), tr("Abort Convert"), 0, 100, this);
+
+        progress.setCancelButton(nullptr);
+        progress.setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::CustomizeWindowHint);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setRange(0, 100);
+        progress.setValue(1);
+        progress.show();
+        QFuture<bool> future;
+        if (currentPath.value().contains(QRegExp(".jp([eg]|eg)$", Qt::CaseInsensitive))){
+            future = QtConcurrent::run([=]() -> bool {
+                return convertor.ConvertJpegToAvif(currentPath.value(), qStrFilePath);
+            });
+        }
+        else {
+            future = QtConcurrent::run([=]() -> bool {
+                auto img = MyImageReader(currentPath.value()).read();
+                return convertor.ImageToAvif(img, qStrFilePath);
+            });
+        }
+
+        // It's a fake progress bar, not actual progress
+        float i = 0;
+        while(1){
+            QThread::msleep(10);
+            QApplication::processEvents();
+            progress.setValue(100 - (100.0 / i + 1));
+            if (future.isFinished())
+                break;
+
+            i += 0.05f;
+        }
+        progress.setValue(100);
+        progress.close();
+
+        if (future.result()){
+            ui->statusBar->showMessage(tr("image saved"), 0);
+        }
+        else {
+            QMessageBox msgBox;
+            msgBox.setText(tr("Cannot write file"));
+            msgBox.exec();
+            return;
+        }
+    }
+    else { // Non-avif file
+
+        auto img = MyImageReader(currentPath.value()).read();
+        QImageWriter writer(qStrFilePath);
+        if(!writer.canWrite())
+        {
+            QMessageBox msgBox;
+            msgBox.setText(tr("Cannot write file"));
+            msgBox.exec();
+            return;
+        }
+        writer.write(img);
+        ui->statusBar->showMessage(tr("image saved"), 0);
+    }
 }
 
 void MainWindow::fitWindow()

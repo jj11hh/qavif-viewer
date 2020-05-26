@@ -1,5 +1,5 @@
 #include "myimagereader.h"
-#include "avif.h"
+#include "avif/avif.h"
 #include <QFile>
 
 MyImageReader::MyImageReader(const QString &fileName)
@@ -47,7 +47,7 @@ QImage MyImageReader::read(){
         height = (int) aimage->height;
         avifRGBImage rgb;
         avifRGBImageSetDefaults(&rgb, aimage);
-        rgb.format = AVIF_RGB_FORMAT_RGB;
+        rgb.format = AVIF_RGB_FORMAT_RGBA;
         rgb.depth = 8;
 
         avifRGBImageAllocatePixels(&rgb);
@@ -55,7 +55,7 @@ QImage MyImageReader::read(){
 
         image = QImage(rgb.pixels, width, height,
                      (int)rgb.rowBytes,
-                     QImage::Format_RGB888, avifFree, rgb.pixels);
+                     QImage::Format_RGBA8888, avifFree, rgb.pixels);
     }
 
     avifImageDestroy(aimage);

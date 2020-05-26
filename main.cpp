@@ -11,13 +11,10 @@ int main(int argc, char *argv[])
 
     QString locale = QLocale::system().name();
     QTranslator translator;
-    if (translator.load("translations/app_" +locale +".qm", ":/")){
-        qDebug() << "Translate file app_" +locale + " loaded" ;
-        a.installTranslator(&translator);
+    if (!translator.load("translations/app_" +locale +".qm", ":/")){
+        translator.load("translations/app_en_US.qm", ":/");
     }
-    else {
-        qDebug() << "No translate file loaded" ;
-    }
+    a.installTranslator(&translator);
 
     MainWindow w;
 

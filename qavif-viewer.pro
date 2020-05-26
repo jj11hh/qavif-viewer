@@ -25,19 +25,30 @@ DEFINES += QT_DEPRECATED_WARNINGS
 
 
 SOURCES += main.cpp\
+    dialogsettings.cpp \
     imageview.cpp \
+    imgconvsettings.cpp \
+    jpegavifconverter.cpp \
+    jpegsegreader.cpp \
     mainwindow.cpp \
+    mygraphicsview.cpp \
     myimagereader.cpp
 
 HEADERS  += mainwindow.h \
+    dialogsettings.h \
     imageview.h \
+    imgconvsettings.h \
+    jpegavifconverter.h \
+    jpegsegreader.h \
+    mygraphicsview.h \
     myimagereader.h
 
-LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/libavif/" -lavif -laom -ldav1d -lrav1e
-INCLUDEPATH += $$_PRO_FILE_PWD_/thirdparty/libavif/include/avif
+LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/lib" -lavif -laom -ldav1d -lrav1e -lturbojpeg-static
+INCLUDEPATH += $$_PRO_FILE_PWD_/thirdparty/include
 
-FORMS    += mainwindow.ui
-TRANSLATIONS = app_zh_CN.ts
+FORMS    += mainwindow.ui \
+    dialogsettings.ui
+TRANSLATIONS = app_zh_CN.ts app_en_US.ts
 
 win32-msvc* {
     QMAKE_CXXFLAGS += /utf-8
@@ -50,7 +61,7 @@ unix {
 }
 
 DISTFILES += \
-    app_zh_CN.qm
+    app_zh_CN.qm app_en_US.qm
 
 RESOURCES += \
     resouce.qrc
