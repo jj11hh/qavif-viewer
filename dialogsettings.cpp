@@ -1,7 +1,7 @@
 #include "dialogsettings.h"
 #include "ui_dialogsettings.h"
 
-DialogSettings::DialogSettings(QWidget *parent, const ImgConvSettings &settings) :
+DialogSettings::DialogSettings(QWidget *parent, const ConvertSettings &settings) :
     QDialog(parent),
     ui(new Ui::DialogSettings)
 {
@@ -65,12 +65,12 @@ bool DialogSettings::getAccepted() const
     return accepted;
 }
 
-ImgConvSettings DialogSettings::getSettings() const
+ConvertSettings DialogSettings::getSettings() const
 {
     return settings;
 }
 
-void DialogSettings::setSettings(const ImgConvSettings &value)
+void DialogSettings::setSettings(const ConvertSettings &value)
 {
     settings = value;
 }

@@ -2,7 +2,7 @@
 #include "ui_mainwindow.h"
 #include "myimagereader.h"
 #include "dialogsettings.h"
-#include "imgconvsettings.h"
+#include "convertsettings.h"
 #include "jpegavifconverter.h"
 
 #include <QFileDialog>
@@ -181,7 +181,7 @@ void MainWindow::saveImage()
 
     assert(currentPath.has_value());
     if (qStrFilePath.endsWith(".avif")){
-        auto dialogSettings = DialogSettings(this, ImgConvSettings());
+        auto dialogSettings = DialogSettings(this, ConvertSettings());
         dialogSettings.exec();
 
         if (!dialogSettings.getAccepted()){
@@ -218,11 +218,12 @@ void MainWindow::saveImage()
         while(1){
             QThread::msleep(10);
             QApplication::processEvents();
-            progress.setValue(100 - (100.0 / i + 1));
+            float d = i + 1;
+            progress.setValue(100 - (100.0 / d));
             if (future.isFinished())
                 break;
-
-            i += 0.05f;
+            if (i < 10000)
+                i += 0.05f;
         }
         progress.setValue(100);
         progress.close();

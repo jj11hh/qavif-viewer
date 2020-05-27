@@ -1,12 +1,12 @@
-#ifndef JPEGSEGREADER_H
-#define JPEGSEGREADER_H
+#ifndef JPEGHEADERREADER_H
+#define JPEGHEADERREADER_H
 
 #include <QIODevice>
 
-class JpegSegReader
+class JpegHeaderReader
 {
 public:
-    JpegSegReader(QIODevice *);
+    JpegHeaderReader(QIODevice *);
     quint16 current();
     quint16 size();
     QByteArray read();
@@ -79,10 +79,10 @@ public:
     static const quint16 M_TEM   = 0xff01;
 
 private:
-    quint16 currentMarker = 0;
+    quint16 currentMark = 0;
     quint16 currentSize = 0;
     QIODevice *io = nullptr;
-    void readMarker();
+    void readMark();
 };
 
-#endif // JPEGSEGREADER_H
+#endif // JPEGHEADERREADER_H

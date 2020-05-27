@@ -1,4 +1,5 @@
-﻿#pragma once
+﻿#ifndef IMAGEVIEW_H
+#define IMAGEVIEW_H
 
 #include <QGraphicsView>
 #include <QWheelEvent>
@@ -32,3 +33,5 @@ protected:
     void resizeEvent(QResizeEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
 };
+
+#endif //IMAGEVIEW_H

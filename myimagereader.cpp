@@ -1,6 +1,8 @@
 #include "myimagereader.h"
 #include "avif/avif.h"
 #include <QFile>
+#include <QColorSpace>
+#include <QDebug>
 
 MyImageReader::MyImageReader(const QString &fileName)
 {
@@ -56,6 +58,12 @@ QImage MyImageReader::read(){
         image = QImage(rgb.pixels, width, height,
                      (int)rgb.rowBytes,
                      QImage::Format_RGBA8888, avifFree, rgb.pixels);
+
+        if (aimage->icc.size){
+            auto ICCProfile = QByteArray::fromRawData((char *)aimage->icc.data, aimage->icc.size);
+            auto colorSpace = QColorSpace::fromIccProfile(ICCProfile);
+            image.setColorSpace(colorSpace);
+        }
     }
 
     avifImageDestroy(aimage);

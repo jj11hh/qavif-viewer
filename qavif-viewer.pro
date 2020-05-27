@@ -27,20 +27,18 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += main.cpp\
     dialogsettings.cpp \
     imageview.cpp \
-    imgconvsettings.cpp \
+    convertsettings.cpp\
     jpegavifconverter.cpp \
-    jpegsegreader.cpp \
+    jpegheaderreader.cpp \
     mainwindow.cpp \
-    mygraphicsview.cpp \
     myimagereader.cpp
 
 HEADERS  += mainwindow.h \
     dialogsettings.h \
     imageview.h \
-    imgconvsettings.h \
+    convertsettings.h \
     jpegavifconverter.h \
-    jpegsegreader.h \
-    mygraphicsview.h \
+    jpegheaderreader.h \
     myimagereader.h
 
 LIBS += -L"$$_PRO_FILE_PWD_/thirdparty/lib" -lavif -laom -ldav1d -lrav1e -lturbojpeg

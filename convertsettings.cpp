@@ -1,11 +1,11 @@
-#include "imgconvsettings.h"
+#include "convertsettings.h"
 
-ImgConvSettings::ImgConvSettings(int minQ, int maxQ, int _encodeSpeed, int jpegQ, bool saveExif, bool restoreExif)
+ConvertSettings::ConvertSettings(int minQ, int maxQ, int _encodeSpeed, int jpegQ, bool saveExif, bool restoreExif)
     : minQuantizer(minQ), maxQuantizer(maxQ), encodeSpeed(_encodeSpeed), jpegQuality(jpegQ), isSaveAvifExif(saveExif), isSaveJpegExif(restoreExif)
 {}
 
-ImgConvSettings::~ImgConvSettings(){}
-ImgConvSettings::ImgConvSettings(const ImgConvSettings &other){
+ConvertSettings::~ConvertSettings(){}
+ConvertSettings::ConvertSettings(const ConvertSettings &other){
     minQuantizer = other.minQuantizer;
     maxQuantizer = other.maxQuantizer;
     encodeSpeed = other.encodeSpeed;

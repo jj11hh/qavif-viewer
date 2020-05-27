@@ -1,5 +1,5 @@
 #include "jpegavifconverter.h"
-#include "jpegsegreader.h"
+#include "jpegheaderreader.h"
 #include "avif/avif.h"
 #include <cstdio>
 #include <cstring>
@@ -58,25 +58,25 @@ static inline int format_a2j(avifPixelFormat format){
     }
 }
 
-JpegAvifConverter::JpegAvifConverter(const ImgConvSettings &convSettings): settings(convSettings) {}
+JpegAvifConverter::JpegAvifConverter(const ConvertSettings &convSettings): settings(convSettings) {}
 
 bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString &avifpath) const{
     tjhandle handle = nullptr;
     int width, height, subsample, colorspace;
     int ret = 0;
-    int depth = 8; // I don't know how to get the real depth from turbojpeg
+    int depth = 8;
     avifPixelFormat yuv_format = AVIF_PIXEL_FORMAT_YUV420;
 
     QFile jpegFile(jpegpath);
     QFile avifFile(avifpath);
 
-    if (!jpegFile.open(QIODevice::ReadOnly)){                        // [open]  jpegFile
+    if (!jpegFile.open(QIODevice::ReadOnly)){
         qCritical("Can't open file: %s", jpegpath.toUtf8().constData());
         return false;
     }
-    if (!avifFile.open(QIODevice::WriteOnly)){                      // [open]  avifFile
+    if (!avifFile.open(QIODevice::WriteOnly)){
         qCritical("Can't open file: %s", avifpath.toUtf8().constData());
-        return false;                                               // !EXIT!
+        return false;
     }
 
     auto jpegBytes = jpegFile.readAll();
@@ -84,20 +84,20 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     QByteArray icc, exif;
     QBuffer jpeg_io(&jpegBytes);
     jpeg_io.open(QBuffer::ReadOnly);
-    JpegSegReader jpegReader(&jpeg_io);
+    JpegHeaderReader jpegReader(&jpeg_io);
     auto * jpeg_buf = reinterpret_cast<const uint8_t *>(jpegBytes.constData());
     unsigned long jpeg_size = static_cast<std::make_unsigned<int>::type>(jpegBytes.length());
 
-    jpegFile.close();                                               // [close] jpegFile
+    jpegFile.close();
 
-    handle = tjInitDecompress();                                    // [open] handle
+    handle = tjInitDecompress();
     Q_CHECK_PTR(handle);
 
     ret = tjDecompressHeader3(handle, jpeg_buf, jpeg_size, &width, &height, &subsample, &colorspace);
     if (ret < 0){
-        tjDestroy(handle);                                          // [close] handle
+        tjDestroy(handle);
         qCritical("Can't read a valid jpeg head: %s", jpegpath.toUtf8().constData());
-        return false;                                               // !EXIT!
+        return false;
     }
 
     qDebug() << "Loaded JPEG: w=" << width << ", h=" << height;
@@ -105,11 +105,11 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     // Dump ICC and EXIF here
     while (! jpegReader.atEnd()){
         qDebug("Marker 0x%4x got", jpegReader.current());
-        if (jpegReader.current() == JpegSegReader::M_APP1){ // EXIF in APP1 Segment
+        if (jpegReader.current() == JpegHeaderReader::M_APP1){ // EXIF in APP1 Segment
             exif += jpegReader.read();
             qDebug() << "EXIF read, " << exif.length() << "bytes";
         }
-        else if (jpegReader.current() == JpegSegReader::M_APP2){ // ICC Profile was stored in APP2 Segment
+        else if (jpegReader.current() == JpegHeaderReader::M_APP2){ // ICC Profile was stored in APP2 Segment
             icc += jpegReader.read();
             qDebug() << "ICC read, " << icc.length() << "bytes";
         }
@@ -123,6 +123,7 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     if (yuv_format == AVIF_PIXEL_FORMAT_NONE){
         tjDestroy(handle);
         qCritical("Unsupported format");
+        return false;
     }
 
     auto avifImage = avifImageCreate(width, height, depth, yuv_format);
@@ -146,8 +147,6 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     avifImage->matrixCoefficients = (avifMatrixCoefficients)5;
     // Let's try to decode/encode it in YUV PLANES WAY
 
-    // First, allocate memory for planes
-
     unsigned long y_size, u_size, v_size;
     y_size = tjPlaneSizeYUV(0, width, 0, height, subsample);
     u_size = tjPlaneSizeYUV(1, width, 0, height, subsample);
@@ -161,7 +160,7 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     qDebug("as TurboJpeg needed, size of [y, u, v] == [%lu, %lu, %lu]", y_size, u_size, v_size);
     qDebug("width of [y, u, v] == [%d, %d, %d]", y_w, u_w, v_w);
 
-    //avifImageAllocatePlanes(avifImage, AVIF_PLANES_YUV);
+    // avifImageAllocatePlanes(avifImage, AVIF_PLANES_YUV);
     // turbojpeg will pad memory, but libavif don't
     // let's hack it
 
@@ -185,18 +184,18 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     avifImage->yuvRowBytes[AVIF_CHAN_V] = (uint32_t)uvRowBytes;
     avifImage->yuvPlanes[AVIF_CHAN_V] = plane_v;
 
-    tjDecompressToYUVPlanes( handle,
-                             jpeg_buf,
-                             jpeg_size,
-                             avifImage->yuvPlanes, // YES
-                             width,
-                             nullptr,
-                             height,
-                             0);
+    tjDecompressToYUVPlanes(
+                handle,
+                jpeg_buf,
+                jpeg_size,
+                avifImage->yuvPlanes,
+                width,
+                nullptr,
+                height,
+                0
+    );
 
     rearrage(plane_y, plane_y, (size_t)y_w, (size_t)fullRowBytes, height);
-    //rearrage(plane_u, plane_y, (size_t)u_w, (size_t)uvRowBytes, height);
-    //rearrage(plane_v, plane_y, (size_t)v_w, (size_t)uvRowBytes, height);
 
     tjDestroy(handle);
     auto encoder = avifEncoderCreate();
@@ -208,7 +207,7 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     encoder->maxThreads = QThread::idealThreadCount();
     encoder->minQuantizer = settings.minQuantizer;
     encoder->maxQuantizer = settings.maxQuantizer;
-    encoder->codecChoice = AVIF_CODEC_CHOICE_AOM;
+    encoder->codecChoice = AVIF_CODEC_CHOICE_RAV1E;
     encoder->speed = settings.encodeSpeed;
 
     qDebug("starting encode: mt=%d, minQ=%d, maxQ=%d, speed=%d",
@@ -285,9 +284,6 @@ bool JpegAvifConverter::ConvertAvifToJpeg(const QString &avifpath, const QString
         int fullRowBytes = channelSize * (int)image->width;
         avifPixelFormatInfo info;
         avifGetPixelFormatInfo(image->yuvFormat, &info);
-        // int shiftedW = ((int)image->width + info.chromaShiftX) >> info.chromaShiftX;
-        // int shiftedH = ((int)avifImage->height + info.chromaShiftY) >> info.chromaShiftY;
-        // int uvRowBytes = channelSize * shiftedW;
 
         size_t y_size = tjPlaneSizeYUV(0, width, 0, height, subsample);
 
@@ -332,12 +328,12 @@ bool JpegAvifConverter::ConvertAvifToJpeg(const QString &avifpath, const QString
                     if (settings.isSaveJpegExif){
                         // build a header
                         quint16 m;
-                        m = qToBigEndian(JpegSegReader::M_SOI);
+                        m = qToBigEndian(JpegHeaderReader::M_SOI);
                         jpegFile.write( reinterpret_cast<char *>(&m), 2);
 
                         qDebug() << "EXIF size: "<< image->exif.size;
                         if (image->exif.size >= 2){
-                            m = qToBigEndian(JpegSegReader::M_APP1);
+                            m = qToBigEndian(JpegHeaderReader::M_APP1);
                             jpegFile.write( reinterpret_cast<char *>(&m), 2);
                             jpegFile.write(
                                 reinterpret_cast<char*>(image->exif.data),
@@ -347,7 +343,7 @@ bool JpegAvifConverter::ConvertAvifToJpeg(const QString &avifpath, const QString
 
                         qDebug() << "ICC size: "<< image->icc.size;
                         if (image->icc.size >= 2){
-                            m = qToBigEndian(JpegSegReader::M_APP2);
+                            m = qToBigEndian(JpegHeaderReader::M_APP2);
                             jpegFile.write( reinterpret_cast<char *>(&m), 2);
                             jpegFile.write(
                                 reinterpret_cast<char*>(image->icc.data),
@@ -360,10 +356,10 @@ bool JpegAvifConverter::ConvertAvifToJpeg(const QString &avifpath, const QString
                         // It's quite straightforward, is it ?
 #define get_word(x)  (qFromBigEndian(*reinterpret_cast<quint16 *>(&jpegBuf[x])))
 
-                        Q_ASSERT( get_word(i) == JpegSegReader::M_SOI );
+                        Q_ASSERT( get_word(i) == JpegHeaderReader::M_SOI );
                         i += 2; // Skip SOI
 
-                        while ( (m = get_word(i)) != JpegSegReader::M_SOS){
+                        while ( (m = get_word(i)) != JpegHeaderReader::M_SOS){
                             if ( (m & 0xFFE0) == 0xFFE0 ){ // APP0 to APP15 is 0xFFE0 to 0xFFEF
                                 // get_word(i + 2) is the next word, the length of segment
                                 // But the marker itself is not included, so plus 2 to skip it too
