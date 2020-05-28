@@ -184,8 +184,8 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     avifImage->yuvRowBytes[AVIF_CHAN_V] = (uint32_t)uvRowBytes;
     avifImage->yuvPlanes[AVIF_CHAN_V] = plane_v;
 
-    // Make libavif manage planes to avoid mem laekage
-    avifImage->imageOwnsAlphaPlane = AVIF_TRUE;
+    // Make libavif manage planes to avoid mem leak
+    avifImage->imageOwnsYUVPlanes = AVIF_TRUE;
 
     tjDecompressToYUVPlanes(
                 handle,
