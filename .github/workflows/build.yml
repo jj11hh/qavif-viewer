@@ -8,12 +8,20 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build on ${{ matrix.os }} (${{ matrix.arch }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-24.04
+            arch: x64
+          - os: windows-latest
+            arch: x64
+          - os: windows-latest
+            arch: x86
+          - os: macos-latest
+            arch: arm64
 
     env:
       VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/vcpkg_cache,readwrite"
@@ -31,9 +39,9 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ github.workspace }}/vcpkg_cache
-        key: ${{ runner.os }}-vcpkg-binaries-${{ hashFiles('vcpkg.json') }}
+        key: ${{ runner.os }}-${{ matrix.arch }}-vcpkg-binaries-${{ hashFiles('vcpkg.json') }}
         restore-keys: |
-          ${{ runner.os }}-vcpkg-binaries-
+          ${{ runner.os }}-${{ matrix.arch }}-vcpkg-binaries-
 
     - name: Install System Dependencies (Linux)
       if: runner.os == 'Linux'
@@ -66,16 +74,22 @@ jobs:
       uses: lukka/run-vcpkg@v11
       with:
         vcpkgDirectory: ${{ github.workspace }}/vcpkg
-        vcpkgGitCommitId: '84bab45d415d22042bd0b9081aea57f362da3f35'
+        vcpkgGitCommitId: '66c0373dc7fca549e5803087b9487edfe3aca0a1'
         vcpkgJsonGlob: 'vcpkg.json'
 
     - name: Configure CMake
       shell: bash
       run: |
         if [ "$RUNNER_OS" == "Windows" ]; then
-          cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
-            -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DCMAKE_BUILD_TYPE=Release
+          if [ "${{ matrix.arch }}" == "x86" ]; then
+            cmake -S . -B build -G "Visual Studio 17 2022" -A Win32 \
+              -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake \
+              -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake -S . -B build -G "Visual Studio 17 2022" -A x64 \
+              -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake \
+              -DCMAKE_BUILD_TYPE=Release
+          fi
         else
           cmake -S . -B build -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake \
@@ -93,8 +107,8 @@ jobs:
         mkdir -p deploy
         cp build/Release/qavif-viewer.exe deploy/
         # Copy DLLs from vcpkg
-        # Usually in build/vcpkg_installed/x64-windows/bin
-        cp build/vcpkg_installed/x64-windows/bin/*.dll deploy/ || true
+        TRIPLET="${{ matrix.arch }}-windows"
+        cp build/vcpkg_installed/$TRIPLET/bin/*.dll deploy/ || true
 
     - name: Package (macOS)
       if: runner.os == 'macOS'
@@ -102,11 +116,6 @@ jobs:
       run: |
         mkdir -p deploy
         cp build/qavif-viewer deploy/
-        # dylibs? vcpkg usually links static on mac or uses rpath.
-        # If dynamic, we might need to bundle.
-        # For this prototype, assume it works or user has brew libs.
-        # But vcpkg built libs should be next to it if we want to be safe, 
-        # or we just upload the binary.
 
     - name: Package (Linux)
       if: runner.os == 'Linux'
@@ -114,11 +123,9 @@ jobs:
       run: |
         mkdir -p deploy
         cp build/qavif-viewer deploy/
-        # Copy shared libs if any
-        # cp build/vcpkg_installed/x64-linux/bin/*.so* deploy/ || true
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: qavif-viewer-${{ matrix.os }}
+        name: qavif-viewer-${{ matrix.os }}-${{ matrix.arch }}
         path: deploy/
