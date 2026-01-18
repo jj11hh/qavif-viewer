@@ -60,6 +60,8 @@ file(WRITE ${TRANSLATIONS_QRC_PATH} "${QRC_CONTENT}")
 qt6_add_resources(PROJECT_RESOURCES ${TRANSLATIONS_QRC_PATH})
 
 qt_add_executable(qavif-viewer
+    WIN32
+    MACOSX_BUNDLE
     ${PROJECT_SOURCES}
     ${PROJECT_RESOURCES}
 )

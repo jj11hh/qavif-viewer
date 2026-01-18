@@ -87,14 +87,57 @@ jobs:
       shell: bash
       run: cmake --build build --config Release
 
+    - name: Deploy (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        mkdir -p deploy
+        cp build/Release/qavif-viewer.exe deploy/
+        windeployqt deploy/qavif-viewer.exe --release --no-translations --no-compiler-runtime --dir deploy
+
+    - name: Deploy (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        macdeployqt build/qavif-viewer.app -dmg -verbose=1
+
+    - name: Deploy (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        # Download linuxdeployqt
+        wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
+        chmod +x linuxdeployqt-continuous-x86_64.AppImage
+
+        # Prepare directory for deployment
+        mkdir -p deploy
+        cp build/qavif-viewer deploy/
+        
+        # Create a dummy desktop file required by linuxdeployqt
+        cat <<EOF > deploy/qavif-viewer.desktop
+        [Desktop Entry]
+        Type=Application
+        Name=QAVIF Viewer
+        Exec=qavif-viewer
+        Icon=icon
+        Categories=Graphics;
+        EOF
+
+        # Copy icon
+        cp Images/icon.png deploy/icon.png
+
+        # Run linuxdeployqt in bundle mode (no -appimage) to just gather dependencies
+        # Using -unsupported-allow-new-glibc because we are on a newer runner
+        ./linuxdeployqt-continuous-x86_64.AppImage deploy/qavif-viewer.desktop -unsupported-allow-new-glibc -extra-plugins=iconengines,imageformats
+
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: qavif-viewer-${{ matrix.os }}
         path: |
-          build/qavif-viewer
-          build/qavif-viewer.exe
-          build/Release/qavif-viewer.exe
+          deploy/
+          build/qavif-viewer.dmg
+          *.AppImage
 
     - name: List vcpkg cache
       shell: bash
