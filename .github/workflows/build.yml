@@ -126,9 +126,14 @@ jobs:
         # Copy icon
         cp Images/icon.png deploy/icon.png
 
-        # Run linuxdeployqt in bundle mode (no -appimage) to just gather dependencies
-        # Using -unsupported-allow-new-glibc because we are on a newer runner
-        ./linuxdeployqt-continuous-x86_64.AppImage deploy/qavif-viewer.desktop -unsupported-allow-new-glibc -extra-plugins=iconengines,imageformats
+        # Setup env for vcpkg libs
+        # We need to help ldd find the vcpkg shared libraries
+        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/build/vcpkg_installed/x64-linux/lib
+
+        # Run linuxdeployqt
+        # Added -appimage to create a standalone AppImage
+        # Added -verbose=2 to debug potential issues
+        ./linuxdeployqt-continuous-x86_64.AppImage deploy/qavif-viewer.desktop -appimage -unsupported-allow-new-glibc -extra-plugins=iconengines,imageformats -verbose=2
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
