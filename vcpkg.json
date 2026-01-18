@@ -6,9 +6,15 @@
     {
       "name": "libavif",
       "features": [
-        "aom",
-        "dav1d"
+        "aom"
       ]
+    },
+    {
+      "name": "libavif",
+      "features": [
+        "dav1d"
+      ],
+      "platform": "! (windows & x86)"
     },
     {
       "name": "libjpeg-turbo"
