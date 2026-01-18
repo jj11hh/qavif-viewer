@@ -12,6 +12,18 @@
     },
     {
       "name": "libjpeg-turbo"
-    }
+    },
+    {
+      "name": "imgui",
+      "features": [
+        "glfw-binding",
+        "opengl3-binding",
+        "docking-experimental"
+      ]
+    },
+    "glfw3",
+    "glad",
+    "stb",
+    "nativefiledialog-extended"
   ]
 }

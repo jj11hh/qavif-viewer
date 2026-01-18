@@ -2,9 +2,9 @@ name: Build
 
 on:
   push:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "refactor/imgui-ui" ]
   pull_request:
-    branches: [ "master", "main" ]
+    branches: [ "master", "main", "refactor/imgui-ui" ]
 
 jobs:
   build:
@@ -35,13 +35,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-vcpkg-binaries-
 
-    - name: Install Qt
-      uses: jurplel/install-qt-action@v4
-      with:
-        version: '6.7.0'
-        cache: true
-        modules: 'qtimageformats'
-
     - name: Install System Dependencies (Linux)
       if: runner.os == 'Linux'
       run: |
@@ -52,6 +45,12 @@ jobs:
           ninja-build \
           pkg-config \
           libgl1-mesa-dev \
+          libx11-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libxi-dev \
+          libgtk-3-dev \
           nasm
 
     - name: Install System Dependencies (macOS)
@@ -87,63 +86,39 @@ jobs:
       shell: bash
       run: cmake --build build --config Release
 
-    - name: Deploy (Windows)
+    - name: Package (Windows)
       if: runner.os == 'Windows'
       shell: bash
       run: |
         mkdir -p deploy
         cp build/Release/qavif-viewer.exe deploy/
-        windeployqt deploy/qavif-viewer.exe --release --no-translations --no-compiler-runtime --dir deploy
+        # Copy DLLs from vcpkg
+        # Usually in build/vcpkg_installed/x64-windows/bin
+        cp build/vcpkg_installed/x64-windows/bin/*.dll deploy/ || true
 
-    - name: Deploy (macOS)
+    - name: Package (macOS)
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        macdeployqt build/qavif-viewer.app -dmg -verbose=1
+        mkdir -p deploy
+        cp build/qavif-viewer deploy/
+        # dylibs? vcpkg usually links static on mac or uses rpath.
+        # If dynamic, we might need to bundle.
+        # For this prototype, assume it works or user has brew libs.
+        # But vcpkg built libs should be next to it if we want to be safe, 
+        # or we just upload the binary.
 
-    - name: Deploy (Linux)
+    - name: Package (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        # Download linuxdeployqt
-        wget https://github.com/probonopd/linuxdeployqt/releases/download/continuous/linuxdeployqt-continuous-x86_64.AppImage
-        chmod +x linuxdeployqt-continuous-x86_64.AppImage
-
-        # Prepare directory for deployment
         mkdir -p deploy
         cp build/qavif-viewer deploy/
-        
-        # Create a dummy desktop file required by linuxdeployqt
-        cat <<EOF > deploy/qavif-viewer.desktop
-        [Desktop Entry]
-        Type=Application
-        Name=QAVIF Viewer
-        Exec=qavif-viewer
-        Icon=icon
-        Categories=Graphics;
-        EOF
-
-        # Copy icon
-        cp Images/icon.png deploy/icon.png
-
-        # Setup env for vcpkg libs
-        # We need to help ldd find the vcpkg shared libraries
-        export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$(pwd)/build/vcpkg_installed/x64-linux/lib
-
-        # Run linuxdeployqt
-        # Added -appimage to create a standalone AppImage
-        # Added -verbose=2 to debug potential issues
-        ./linuxdeployqt-continuous-x86_64.AppImage deploy/qavif-viewer.desktop -appimage -unsupported-allow-new-glibc -extra-plugins=iconengines,imageformats -verbose=2
+        # Copy shared libs if any
+        # cp build/vcpkg_installed/x64-linux/bin/*.so* deploy/ || true
 
     - name: Upload Artifacts
       uses: actions/upload-artifact@v4
       with:
         name: qavif-viewer-${{ matrix.os }}
-        path: |
-          deploy/
-          build/qavif-viewer.dmg
-          *.AppImage
-
-    - name: List vcpkg cache
-      shell: bash
-      run: ls -R ${{ github.workspace }}/vcpkg_cache || true
+        path: deploy/

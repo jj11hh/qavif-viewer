@@ -1,45 +1,36 @@
-﻿#ifndef MAINWINDOW_H
+#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
-#include <QMainWindow>
-#include <QGraphicsScene>
-#include <QDir>
-#include <optional>
+#include "imageview.h"
+#include "convertsettings.h"
+#include <string>
 
-namespace Ui {
-class MainWindow;
-}
-
-class MainWindow : public QMainWindow
-{
-    Q_OBJECT
-
+class MainWindow {
 public:
-    explicit MainWindow(QWidget *parent = nullptr);
+    MainWindow();
     ~MainWindow();
 
-    bool loadImage(const QString &path);
-
+    void Render();
+    void LoadFile(const std::string& path);
+    
 private:
-    Ui::MainWindow *ui;
-    QGraphicsScene* m_graphicsScene;
-    void saveImage();
-    void openImage();
-    void about();
-    void fitWindow();
-    std::optional<QString> lastOpenPath;
-    std::optional<QString> currentPath;
-    std::optional<QDir> currentDir;
-private slots:
-    void on_actionOpen_triggered();
-    void on_actionSave_triggered();
-    void on_actionAbout_triggered();
-    void nextImage();
-    void prevImage();
-    void onResized(qreal factor);
-    void on_BtnFitWindow_clicked();
-    void on_BtnOriginalSize_clicked();
-    void on_SlZoom_valueChanged(int value);
+    ImageView m_imageView;
+    ConvertSettings m_settings;
+    std::string m_currentFilePath;
+    float m_zoom = 1.0f;
+    
+    bool m_showSettings = false;
+    bool m_showAbout = false;
+    std::string m_statusMessage;
+
+    void OpenFile();
+    void SaveFile();
+    
+    void DrawMenuBar();
+    void DrawToolBar();
+    void DrawSettingsModal();
+    void DrawAboutModal();
+    void DrawStatusBar();
 };
 
 #endif // MAINWINDOW_H

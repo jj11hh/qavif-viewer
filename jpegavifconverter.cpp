@@ -3,15 +3,18 @@
 #include "avif/avif.h"
 #include <cstdio>
 #include <cstring>
-#include <QFile>
-#include <QDebug>
-#include <QBuffer>
-#include <QThread>
-#include <QApplication>
-#include <QtEndian>
+#include <fstream>
+#include <iostream>
+#include <vector>
+#include <memory>
 
 extern "C" {
 #include "turbojpeg.h"
+}
+
+// Helper endian functions
+static uint16_t to_be16(uint16_t x) {
+    return ((x & 0xFF) << 8) | ((x >> 8) & 0xFF);
 }
 
 static void rearrage(uint8_t *src_buffer, uint8_t *dst_buffer, size_t src_size, size_t dst_size, int height){
@@ -60,58 +63,46 @@ static inline int format_a2j(avifPixelFormat format){
 
 JpegAvifConverter::JpegAvifConverter(const ConvertSettings &convSettings): settings(convSettings) {}
 
-bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString &avifpath) const{
+bool JpegAvifConverter::ConvertJpegToAvif(const std::string &jpegpath, const std::string &avifpath) const{
     tjhandle handle = nullptr;
     int width, height, subsample, colorspace;
     int ret = 0;
     int depth = 8;
     avifPixelFormat yuv_format = AVIF_PIXEL_FORMAT_YUV420;
 
-    QFile jpegFile(jpegpath);
-    QFile avifFile(avifpath);
-
-    if (!jpegFile.open(QIODevice::ReadOnly)){
-        qCritical("Can't open file: %s", jpegpath.toUtf8().constData());
-        return false;
-    }
-    if (!avifFile.open(QIODevice::WriteOnly)){
-        qCritical("Can't open file: %s", avifpath.toUtf8().constData());
-        return false;
-    }
-
-    auto jpegBytes = jpegFile.readAll();
-
-    QByteArray icc, exif;
-    QBuffer jpeg_io(&jpegBytes);
-    jpeg_io.open(QBuffer::ReadOnly);
-    JpegHeaderReader jpegReader(&jpeg_io);
-    auto * jpeg_buf = reinterpret_cast<const uint8_t *>(jpegBytes.constData());
-    unsigned long jpeg_size = static_cast<std::make_unsigned<int>::type>(jpegBytes.length());
-
+    std::ifstream jpegFile(jpegpath, std::ios::binary | std::ios::ate);
+    if (!jpegFile.is_open()) return false;
+    
+    size_t jpegSize = jpegFile.tellg();
+    jpegFile.seekg(0, std::ios::beg);
+    std::vector<uint8_t> jpegBytes(jpegSize);
+    if (!jpegFile.read((char*)jpegBytes.data(), jpegSize)) return false;
     jpegFile.close();
 
-    handle = tjInitDecompress();
-    Q_CHECK_PTR(handle);
+    // Scan headers
+    JpegHeaderReader jpegReader(jpegBytes.data(), jpegBytes.size());
+    std::vector<uint8_t> icc;
+    std::vector<uint8_t> exif;
 
-    ret = tjDecompressHeader3(handle, jpeg_buf, jpeg_size, &width, &height, &subsample, &colorspace);
+    handle = tjInitDecompress();
+    if (!handle) return false;
+
+    ret = tjDecompressHeader3(handle, jpegBytes.data(), jpegBytes.size(), &width, &height, &subsample, &colorspace);
     if (ret < 0){
         tjDestroy(handle);
-        qCritical("Can't read a valid jpeg head: %s", jpegpath.toUtf8().constData());
         return false;
     }
 
-    qDebug() << "Loaded JPEG: w=" << width << ", h=" << height;
-
-    // Dump ICC and EXIF here
-    while (! jpegReader.atEnd()){
-        qDebug("Marker 0x%4x got", jpegReader.current());
-        if (jpegReader.current() == JpegHeaderReader::M_APP1){ // EXIF in APP1 Segment
-            exif += jpegReader.read();
-            qDebug() << "EXIF read, " << exif.length() << "bytes";
+    // Dump ICC and EXIF
+    while (!jpegReader.atEnd()){
+        uint16_t m = jpegReader.current();
+        if (m == JpegHeaderReader::M_APP1){ // EXIF in APP1 Segment
+            auto chunk = jpegReader.read();
+            exif.insert(exif.end(), chunk.begin(), chunk.end());
         }
-        else if (jpegReader.current() == JpegHeaderReader::M_APP2){ // ICC Profile was stored in APP2 Segment
-            icc += jpegReader.read();
-            qDebug() << "ICC read, " << icc.length() << "bytes";
+        else if (m == JpegHeaderReader::M_APP2){ // ICC Profile
+            auto chunk = jpegReader.read();
+            icc.insert(icc.end(), chunk.begin(), chunk.end());
         }
         else {
             jpegReader.skip();
@@ -119,58 +110,38 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     }
 
     yuv_format = format_j2a(subsample);
-
     if (yuv_format == AVIF_PIXEL_FORMAT_NONE){
         tjDestroy(handle);
-        qCritical("Unsupported format");
         return false;
     }
 
     auto avifImage = avifImageCreate(width, height, depth, yuv_format);
 
-    // Copy ICC and EXIF
-    if (icc.length()){
-        (void)avifImageSetProfileICC(avifImage,
-            reinterpret_cast<uint8_t *>(icc.data()),
-            static_cast<std::make_unsigned<int>::type>(icc.length()));
+    if (!icc.empty()){
+        avifImageSetProfileICC(avifImage, icc.data(), icc.size());
     }
 
-    if (exif.length() && settings.isSaveAvifExif){
-        (void)avifImageSetMetadataExif(avifImage,
-            reinterpret_cast<uint8_t*>(exif.data()),
-            static_cast<std::make_unsigned<int>::type>(exif.length()));
+    if (!exif.empty() && settings.isSaveAvifExif){
+        avifImageSetMetadataExif(avifImage, exif.data(), exif.size());
     }
 
-    // SRGB color space
     avifImage->colorPrimaries = (avifColorPrimaries)1;
     avifImage->transferCharacteristics = (avifTransferCharacteristics)13;
     avifImage->matrixCoefficients = (avifMatrixCoefficients)5;
-    // Let's try to decode/encode it in YUV PLANES WAY
 
-    unsigned long y_size, u_size, v_size;
-    y_size = tjPlaneSizeYUV(0, width, 0, height, subsample);
-    u_size = tjPlaneSizeYUV(1, width, 0, height, subsample);
-    v_size = tjPlaneSizeYUV(2, width, 0, height, subsample);
+    unsigned long y_size = tjPlaneSizeYUV(0, width, 0, height, subsample);
+    unsigned long u_size = tjPlaneSizeYUV(1, width, 0, height, subsample);
+    unsigned long v_size = tjPlaneSizeYUV(2, width, 0, height, subsample);
 
-    int y_w, u_w, v_w;
-    y_w = tjPlaneWidth(0, width, subsample);
-    u_w = tjPlaneWidth(1, width, subsample);
-    v_w = tjPlaneWidth(2, width, subsample);
+    int y_w = tjPlaneWidth(0, width, subsample);
+    // int u_w = tjPlaneWidth(1, width, subsample);
+    // int v_w = tjPlaneWidth(2, width, subsample);
 
-    qDebug("as TurboJpeg needed, size of [y, u, v] == [%lu, %lu, %lu]", y_size, u_size, v_size);
-    qDebug("width of [y, u, v] == [%d, %d, %d]", y_w, u_w, v_w);
-
-    // avifImageAllocatePlanes(avifImage, AVIF_PLANES_YUV);
-    // turbojpeg will pad memory, but libavif don't
-    // let's hack it
-
-    int channelSize = avifImageUsesU16(avifImage) ? 2 : 1;
+    int channelSize = 1; // 8 bit
     int fullRowBytes = channelSize * (int)avifImage->width;
     avifPixelFormatInfo info;
     avifGetPixelFormatInfo(avifImage->yuvFormat, &info);
     int shiftedW = ((int)avifImage->width + info.chromaShiftX) >> info.chromaShiftX;
-    // int shiftedH = ((int)avifImage->height + info.chromaShiftY) >> info.chromaShiftY;
-
     int uvRowBytes = channelSize * shiftedW;
 
     uint8_t * plane_y = (uint8_t *) avifAlloc(y_size);
@@ -183,15 +154,16 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     avifImage->yuvPlanes[AVIF_CHAN_U] = plane_u;
     avifImage->yuvRowBytes[AVIF_CHAN_V] = (uint32_t)uvRowBytes;
     avifImage->yuvPlanes[AVIF_CHAN_V] = plane_v;
-
-    // Make libavif manage planes to avoid mem leak
     avifImage->imageOwnsYUVPlanes = AVIF_TRUE;
 
+    // Use pointers to planes
+    unsigned char* planes[3] = { plane_y, plane_u, plane_v };
+    
     tjDecompressToYUVPlanes(
                 handle,
-                jpeg_buf,
-                jpeg_size,
-                avifImage->yuvPlanes,
+                jpegBytes.data(),
+                jpegBytes.size(),
+                planes,
                 width,
                 nullptr,
                 height,
@@ -201,282 +173,222 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     rearrage(plane_y, plane_y, (size_t)y_w, (size_t)fullRowBytes, height);
 
     tjDestroy(handle);
+
     auto encoder = avifEncoderCreate();
-    if (! encoder) {
-        qCritical("can't create avif encoder");
+    if (!encoder) {
         avifImageDestroy(avifImage);
         return false;
     }
-    encoder->maxThreads = QThread::idealThreadCount();
+    // encoder->maxThreads = ...; // Use default
     encoder->minQuantizer = settings.minQuantizer;
     encoder->maxQuantizer = settings.maxQuantizer;
     encoder->codecChoice = AVIF_CODEC_CHOICE_AUTO;
     encoder->speed = settings.encodeSpeed;
 
-    qDebug("starting encode: mt=%d, minQ=%d, maxQ=%d, speed=%d",
-           encoder->maxThreads,
-           encoder->minQuantizer,
-           encoder->maxQuantizer,
-           encoder->speed);
-
     avifRWData raw = AVIF_DATA_EMPTY;
-    auto&& encodeResult = avifEncoderWrite(encoder, avifImage, &raw);
-    if (encodeResult != AVIF_RESULT_OK){
-        qCritical("avif encode failed");
-        avifImageDestroy(avifImage);
-        avifRWDataFree(&raw);
-        avifEncoderDestroy(encoder);
-        return false;
+    auto encodeResult = avifEncoderWrite(encoder, avifImage, &raw);
+    
+    bool success = false;
+    if (encodeResult == AVIF_RESULT_OK){
+        std::ofstream outFile(avifpath, std::ios::binary);
+        if (outFile.is_open()) {
+            outFile.write((const char*)raw.data, raw.size);
+            success = true;
+        }
     }
-
-    qint64&& write_size = avifFile.write(reinterpret_cast<const char*>(raw.data), static_cast<qint64>(raw.size));
-    qint64&& should_write = static_cast<qint64>(raw.size);
 
     avifImageDestroy(avifImage);
     avifRWDataFree(&raw);
     avifEncoderDestroy(encoder);
 
-    if (write_size != should_write) {
-        qCritical("wrote size don't match file size");
-        qCritical("should write %lld, wrote %lld", should_write, write_size);
-        return false;
-    }
-
-    return true;
+    return success;
 }
 
-bool JpegAvifConverter::ConvertAvifToJpeg(const QString &avifpath, const QString &jpegpath) const{
-    bool ret = true;
+bool JpegAvifConverter::ConvertAvifToJpeg(const std::string &avifpath, const std::string &jpegpath) const{
+    std::ifstream avifFile(avifpath, std::ios::binary | std::ios::ate);
+    if (!avifFile.is_open()) return false;
+    size_t size = avifFile.tellg();
+    avifFile.seekg(0, std::ios::beg);
+    std::vector<uint8_t> avifBytes(size);
+    if (!avifFile.read((char*)avifBytes.data(), size)) return false;
 
     avifROData raw;
-    QFile jpegFile(jpegpath);
-    QFile avifFile(avifpath);
-
-    if (!jpegFile.open(QIODevice::WriteOnly)){                        // [open]  jpegFile
-        qCritical("Can't open file: %s", jpegpath.toUtf8().constData());
-        return false;
-    }
-    if (!avifFile.open(QIODevice::ReadOnly)){                      // [open]  avifFile
-        qCritical("Can't open file: %s", avifpath.toUtf8().constData());
-        return false;                                               // !EXIT!
-    }
-
-    qDebug("Encode Jpeg to file: %s", jpegpath.toUtf8().constData());
-
-    auto avifBytes = avifFile.readAll();
-
-    raw.data = reinterpret_cast<uint8_t*>(avifBytes.data());
-    raw.size = static_cast<std::make_unsigned<int>::type>(avifBytes.length());
+    raw.data = avifBytes.data();
+    raw.size = avifBytes.size();
 
     avifImage *image = avifImageCreateEmpty();
     avifDecoder *decoder = avifDecoderCreate();
-    avifResult result = avifDecoderSetIOMemory(decoder, raw.data, raw.size);
-    if (result != AVIF_RESULT_OK) {
-        qCritical("avifDecoderSetIOMemory failed: %s", avifResultToString(result));
+    
+    if (avifDecoderReadMemory(decoder, image, raw.data, raw.size) != AVIF_RESULT_OK) {
         avifDecoderDestroy(decoder);
         avifImageDestroy(image);
         return false;
     }
-    avifResult decodeResult = avifDecoderRead(decoder, image);
-    int encodeResult;
-    tjhandle handle = nullptr;
-    int subsample;
-    unsigned char *jpegBuf = nullptr;
-    unsigned long jpegSize = 0;
 
-    if (decodeResult == AVIF_RESULT_OK){
-        qDebug("avif decode ok");
-        subsample = format_a2j(image->yuvFormat);
+    bool ret = true;
+    int subsample = format_a2j(image->yuvFormat);
 
-        int width = (int)image->width;
-        int height = (int)image->height;
-        int channelSize = avifImageUsesU16(image) ? 2 : 1;
-        int fullRowBytes = channelSize * (int)image->width;
-        avifPixelFormatInfo info;
-        avifGetPixelFormatInfo(image->yuvFormat, &info);
+    if (subsample != -1) {
+        tjhandle handle = tjInitCompress();
+        if (handle) {
+            unsigned char *jpegBuf = nullptr;
+            unsigned long jpegSize = 0;
+            
+            // Similar logic for handling strides as in existing code
+             int channelSize = 1;
+             int fullRowBytes = channelSize * (int)image->width;
+             // avifPixelFormatInfo info;
+             // avifGetPixelFormatInfo(image->yuvFormat, &info);
+             
+             size_t y_size = tjPlaneSizeYUV(0, image->width, 0, image->height, subsample);
+             int y_w = tjPlaneWidth(0, image->width, subsample);
+             
+             uint8_t * y_buffer = nullptr;
+             const uint8_t * yuvPlanes[3];
+             
+             if (y_w != fullRowBytes) {
+                 y_buffer = new uint8_t[y_size];
+                 rearrage(image->yuvPlanes[0], y_buffer, (size_t)fullRowBytes, (size_t)y_w, image->height);
+                 yuvPlanes[0] = y_buffer;
+             } else {
+                 yuvPlanes[0] = image->yuvPlanes[0];
+             }
+             yuvPlanes[1] = image->yuvPlanes[1];
+             yuvPlanes[2] = image->yuvPlanes[2];
+             
+             if (tjCompressFromYUVPlanes(
+                 handle,
+                 yuvPlanes,
+                 image->width,
+                 nullptr,
+                 image->height,
+                 subsample,
+                 &jpegBuf,
+                 &jpegSize,
+                 settings.jpegQuality,
+                 0
+             ) == 0) {
+                 
+                 std::ofstream jpegFile(jpegpath, std::ios::binary);
+                 if (jpegFile.is_open()) {
+                      if (settings.isSaveJpegExif) {
+                          // Write SOI
+                          uint16_t soi = to_be16(JpegHeaderReader::M_SOI);
+                          jpegFile.write((char*)&soi, 2);
+                          
+                          // Write EXIF
+                          if (image->exif.size >= 2) {
+                              uint16_t m = to_be16(JpegHeaderReader::M_APP1);
+                              jpegFile.write((char*)&m, 2);
+                              jpegFile.write((char*)image->exif.data, image->exif.size);
+                          }
+                          
+                          // Write ICC
+                          if (image->icc.size >= 2) {
+                              uint16_t m = to_be16(JpegHeaderReader::M_APP2);
+                              jpegFile.write((char*)&m, 2);
+                              jpegFile.write((char*)image->icc.data, image->icc.size);
+                          }
+                          
+                          // Write rest of JPEG
+                          // Skip SOI in buffer
+                          size_t i = 2;
+                          // Helper to get word
+                          auto get_word = [&](size_t pos) -> uint16_t {
+                              return (uint16_t)((jpegBuf[pos] << 8) | jpegBuf[pos+1]);
+                          };
+                          
+                          while (i < jpegSize) {
+                              uint16_t m = get_word(i);
+                              if (m == JpegHeaderReader::M_SOS) {
+                                  // Write everything from here
+                                  jpegFile.write((char*)(jpegBuf + i), jpegSize - i);
+                                  break;
+                              }
+                              
+                              if ((m & 0xFFE0) == 0xFFE0) {
+                                  // Skip app segments in original if we are writing our own? 
+                                  // But turbojpeg doesn't preserve EXIF/ICC usually, 
+                                  // so the jpegBuf shouldn't have them?
+                                  // Turbojpeg generated buffer is clean image data.
+                                  // Wait, turbojpeg compress generates a VALID JPEG with headers (JFIF).
+                                  // It usually inserts APP0 (JFIF).
+                                  // We might be duplicating or messing up if we just blindly insert APP1/APP2 after SOI.
+                                  
+                                  // The original code assumes we insert our APP1/APP2 *after* SOI and *before* other segments 
+                                  // but it filtered out existing APP segments?
+                                  // "if ( (m & 0xFFE0) == 0xFFE0 ) ... i += len + 2" -> Skips APP segments from buffer.
+                                  
+                                  size_t len = get_word(i+2);
+                                  i += len + 2;
+                              } else {
+                                  size_t len = get_word(i+2);
+                                  jpegFile.write((char*)(jpegBuf + i), len + 2);
+                                  i += len + 2;
+                              }
+                          }
+                      } else {
+                          jpegFile.write((char*)jpegBuf, jpegSize);
+                      }
+                 } else {
+                     ret = false;
+                 }
+                 tjFree(jpegBuf);
+             } else {
+                 ret = false;
+             }
+             
+             if (y_buffer) delete[] y_buffer;
+             tjDestroy(handle);
 
-        size_t y_size = tjPlaneSizeYUV(0, width, 0, height, subsample);
-
-        int y_w = tjPlaneWidth(0, width, subsample);
-
-        uint8_t * y_buffer = nullptr;
-        uint8_t * yuvPlanes[3];
-
-        if (y_w != fullRowBytes){
-            y_buffer = new uint8_t[(size_t)y_size];
-            rearrage(image->yuvPlanes[0], y_buffer, (size_t)fullRowBytes, (size_t)y_w, height);
-            yuvPlanes[0] = y_buffer;
-            yuvPlanes[1] = image->yuvPlanes[1];
-            yuvPlanes[2] = image->yuvPlanes[2];
         }
-        else {
-            yuvPlanes[0] = image->yuvPlanes[0];
-            yuvPlanes[1] = image->yuvPlanes[1];
-            yuvPlanes[2] = image->yuvPlanes[2];
-        }
-
-        if (subsample != -1){
-            handle = tjInitCompress();
-            if (handle != nullptr){
-                encodeResult = tjCompressFromYUVPlanes(
-                            handle,
-                            const_cast<const uint8_t**>(reinterpret_cast<uint8_t**>(yuvPlanes)),
-                            static_cast<std::make_signed<unsigned int>::type>(image->width),
-                            nullptr,
-                            static_cast<std::make_signed<unsigned int>::type>(image->height),
-                            subsample,
-                            &jpegBuf,
-                            &jpegSize,
-                            settings.jpegQuality,
-                            0
-                            );
-                if (encodeResult != -1){
-                    qDebug("turbojpeg encode ok");
-                    // Here, We got the metadatas from avif
-                    // and JPEG from turbojpeg
-
-                    if (settings.isSaveJpegExif){
-                        // build a header
-                        quint16 m;
-                        m = qToBigEndian(JpegHeaderReader::M_SOI);
-                        jpegFile.write( reinterpret_cast<char *>(&m), 2);
-
-                        qDebug() << "EXIF size: "<< image->exif.size;
-                        if (image->exif.size >= 2){
-                            m = qToBigEndian(JpegHeaderReader::M_APP1);
-                            jpegFile.write( reinterpret_cast<char *>(&m), 2);
-                            jpegFile.write(
-                                reinterpret_cast<char*>(image->exif.data),
-                                static_cast<std::make_signed<size_t>::type>(image->exif.size)
-                            );
-                        }
-
-                        qDebug() << "ICC size: "<< image->icc.size;
-                        if (image->icc.size >= 2){
-                            m = qToBigEndian(JpegHeaderReader::M_APP2);
-                            jpegFile.write( reinterpret_cast<char *>(&m), 2);
-                            jpegFile.write(
-                                reinterpret_cast<char*>(image->icc.data),
-                                static_cast<std::make_signed<size_t>::type>(image->icc.size)
-                            );
-                        }
-
-
-                        int i = 0;
-                        // It's quite straightforward, is it ?
-#define get_word(x)  (qFromBigEndian(*reinterpret_cast<quint16 *>(&jpegBuf[x])))
-
-                        Q_ASSERT( get_word(i) == JpegHeaderReader::M_SOI );
-                        i += 2; // Skip SOI
-
-                        while ( (m = get_word(i)) != JpegHeaderReader::M_SOS){
-                            if ( (m & 0xFFE0) == 0xFFE0 ){ // APP0 to APP15 is 0xFFE0 to 0xFFEF
-                                // get_word(i + 2) is the next word, the length of segment
-                                // But the marker itself is not included, so plus 2 to skip it too
-                                i += get_word(i + 2) + 2;
-                            }
-                            else {
-                                jpegFile.write(
-                                    reinterpret_cast<char*>(&jpegBuf[i]),
-                                    get_word(i + 2) + 2);
-
-                                i += get_word(i + 2) + 2;
-                            }
-                        }
-#undef get_word
-
-                        // m == M_SOS here
-                        Q_ASSERT( static_cast<std::make_unsigned<int>::type>(i) < jpegSize );
-
-                        jpegFile.write( reinterpret_cast<char*>(&jpegBuf[i]),
-                                        static_cast<std::make_signed<size_t>::type>(jpegSize) - i);
-                    }
-                    else {
-                        // TODO: NO ICC Write
-                        jpegFile.write( reinterpret_cast<char*>(jpegBuf),
-                                        static_cast<std::make_signed<size_t>::type>(jpegSize));
-                    }
-                }
-                else {
-                    qCritical("jpeg encode failed");
-                    ret = false;
-                }
-            }
-            else {
-                qCritical("turbojpeg init failed");
-                ret = false;
-            }
-            tjDestroy(handle);
-        }
-        else {
-            qCritical("unsupported format");
-            ret = false;
-        }
-
-        // those points may not set, but it's safe to delete them
-        delete y_buffer;
-    }
-    else {
-        qCritical("avif decode failed");
-        qCritical("ERROR: Failed to decode: %s\n", avifResultToString(decodeResult));
+    } else {
         ret = false;
     }
+
     avifDecoderDestroy(decoder);
     avifImageDestroy(image);
     return ret;
 }
 
-bool JpegAvifConverter::ImageToAvif(QImage &image, const QString &path) const {
-    if (image.isNull())
-        return false;
+bool JpegAvifConverter::ImageToAvif(const Image &image, const std::string &path) const {
+    if (!image.valid) return false;
 
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly))
-        return false;
-
-    bool ret = true;
-    int depth = 8;
-    avifPixelFormat format = AVIF_PIXEL_FORMAT_YUV420;
-    avifImage *dimage = avifImageCreate(image.width(), image.height(), depth, format);
+    avifImage *dimage = avifImageCreate(image.width, image.height, 8, AVIF_PIXEL_FORMAT_YUV420);
 
     avifRGBImage rgb;
     avifRGBImageSetDefaults(&rgb, dimage);
-    rgb.depth = 8;
     rgb.format = AVIF_RGB_FORMAT_RGBA;
+    rgb.depth = 8;
+    rgb.pixels = const_cast<uint8_t*>(image.data.data());
+    rgb.rowBytes = image.width * 4;
 
-    if (image.format() != QImage::Format_RGBA8888){
-        image.convertTo(QImage::Format_RGBA8888);
-    }
-
-    rgb.pixels = image.bits();
-    rgb.rowBytes = image.bytesPerLine();
-
-    // SRGB color space
     dimage->colorPrimaries = AVIF_COLOR_PRIMARIES_IEC61966_2_4;
-    dimage->transferCharacteristics
-            = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
+    dimage->transferCharacteristics = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
 
-    (void)avifImageRGBToYUV(dimage, &rgb);
+    avifImageRGBToYUV(dimage, &rgb);
 
     avifRWData output = AVIF_DATA_EMPTY;
     avifEncoder *encoder = avifEncoderCreate();
-    encoder->maxThreads = QThread::idealThreadCount();
-    encoder->maxQuantizer = settings.maxQuantizer;
+    // Threads? 
     encoder->minQuantizer = settings.minQuantizer;
+    encoder->maxQuantizer = settings.maxQuantizer;
     encoder->maxQuantizerAlpha = settings.maxQuantizer;
     encoder->minQuantizerAlpha = settings.minQuantizer;
-    avifResult encoderResult = avifEncoderWrite(encoder, dimage, &output);
-    if (encoderResult == AVIF_RESULT_OK){
-        file.write((char *)output.data, output.size);
-        ret = true;
-    }
-    else {
-        ret = false;
+    encoder->speed = settings.encodeSpeed;
+
+    bool ret = false;
+    if (avifEncoderWrite(encoder, dimage, &output) == AVIF_RESULT_OK) {
+        std::ofstream file(path, std::ios::binary);
+        if (file.is_open()) {
+            file.write((char*)output.data, output.size);
+            ret = true;
+        }
     }
 
     avifImageDestroy(dimage);
     avifRWDataFree(&output);
     avifEncoderDestroy(encoder);
-
+    
     return ret;
 }

@@ -1,321 +1,264 @@
-﻿#include "mainwindow.h"
-#include "ui_mainwindow.h"
+#include "mainwindow.h"
 #include "myimagereader.h"
-#include "dialogsettings.h"
-#include "convertsettings.h"
 #include "jpegavifconverter.h"
+#include "imgui.h"
+#include "nfd.h"
+#include <cstdio>
+#include <iostream>
 
-#include <QFileDialog>
-#include <QStandardPaths>
-#include <QFileInfo>
-#include <QProgressDialog>
-#include <QtConcurrent/QtConcurrentRun>
-
-#include <QGraphicsPixmapItem>
-#include <QImageReader>
-#include <QImageWriter>
-#include <QDebug>
-#include <QRegularExpression>
-#include <QThread>
-#include <QtMath>
-
-#include <QMessageBox>
-
-MainWindow::MainWindow(QWidget *parent) :
-    QMainWindow(parent),
-    ui(new Ui::MainWindow),
-    lastOpenPath("")
-{
-    ui->setupUi(this);
-    setWindowIcon(QIcon(":/Images/icon.png"));
-    m_graphicsScene = new QGraphicsScene();
-    m_graphicsScene->setItemIndexMethod(QGraphicsScene::NoIndex);
-    QImage bground(50, 50, QImage::Format_RGB888);
-    for (int y = 0; y < 25; y++)
-    {
-        for (int x = 0; x < 25; x++)
-        {
-            bground.setPixel(x, y, qRgb(0xCA, 0xCA, 0xCA));
-            bground.setPixel(x + 25, y, qRgb(0xFF, 0xFF, 0xFF));
-            bground.setPixel(x, y + 25, qRgb(0xFF, 0xFF, 0xFF));
-            bground.setPixel(x + 25, y + 25, qRgb(0xCA, 0xCA, 0xCA));
-        }
-    }
-    m_graphicsScene->setBackgroundBrush(QPixmap::fromImage(bground));
-
-    ui->m_graphicsView->setScene(m_graphicsScene);
-
-    ui->m_graphicsView->setHorizontalScrollBarPolicy ( Qt::ScrollBarAlwaysOff );
-    ui->m_graphicsView->setVerticalScrollBarPolicy ( Qt::ScrollBarAlwaysOff );
-
-    ui->statusBar->showMessage(tr("ready"), 0);
-    connect(ui->m_graphicsView, &ImageView::nextImage, this, &MainWindow::nextImage);
-    connect(ui->m_graphicsView, &ImageView::prevImage, this, &MainWindow::prevImage);
-    connect(ui->m_graphicsView, &ImageView::resized, this, &MainWindow::onResized);
-
-    ui->m_graphicsView->viewFit();
+MainWindow::MainWindow() {
+    // Initialize NFD
+    NFD_Init();
 }
 
-MainWindow::~MainWindow()
-{
-    delete ui;
+MainWindow::~MainWindow() {
+    NFD_Quit();
 }
 
-void MainWindow::openImage()
-{
-    if (! lastOpenPath.has_value()){
-        lastOpenPath =
-            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation);
-    }
+void MainWindow::Render() {
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::SetNextWindowViewport(viewport->ID);
+    
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove;
+    window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    window_flags |= ImGuiWindowFlags_MenuBar;
 
-    QString qStrFilePath = QFileDialog::getOpenFileName(this,
-        tr("Open Image"),
-        lastOpenPath.value(),
-        tr("Image Files (*.png *.jpg *.bmp *.avif)"));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+    
+    ImGui::Begin("MainDockSpace", nullptr, window_flags);
+    ImGui::PopStyleVar(3);
 
-    if (qStrFilePath.isEmpty())
-        return;
+    DrawMenuBar();
+    DrawToolBar();
 
-    if (!loadImage(qStrFilePath)){
-        QMessageBox msgBox;
-        msgBox.setText(tr("Cannot read file"));
-        msgBox.exec();
-        return;
+    ImGui::BeginChild("ImageArea", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false, ImGuiWindowFlags_HorizontalScrollbar);
+    m_imageView.Draw(m_zoom);
+    ImGui::EndChild();
+
+    DrawStatusBar();
+    
+    DrawSettingsModal();
+    DrawAboutModal();
+
+    ImGui::End();
+}
+
+void MainWindow::LoadFile(const std::string& path) {
+    m_currentFilePath = path;
+    m_statusMessage = "Loading " + m_currentFilePath;
+    
+    MyImageReader reader(m_currentFilePath);
+    Image img = reader.read();
+    if (img.valid) {
+        m_imageView.LoadFromImage(img);
+        m_statusMessage = "Loaded " + m_currentFilePath;
+    } else {
+        m_statusMessage = "Failed to load " + m_currentFilePath;
     }
 }
 
-bool MainWindow::loadImage(const QString &path){
-    qDebug() << "loading " << path;
-
-    currentPath = path;
-    currentDir = QFileInfo(path).absoluteDir();
-    MyImageReader reader(path);
-    QImage qimg = reader.read();
-    if (qimg.isNull())
-    {
-        ui->statusBar->showMessage(tr("Load failed: %1").arg(path), 0);
-        if (!m_graphicsScene->sceneRect().isEmpty())
-        {
-            m_graphicsScene->clear();
+void MainWindow::DrawMenuBar() {
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Open")) {
+                OpenFile();
+            }
+            if (ImGui::MenuItem("Save As...")) {
+                SaveFile();
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Exit")) {
+                // Exit logic
+            }
+            ImGui::EndMenu();
         }
-        return false;
-    }
-    if (!m_graphicsScene->sceneRect().isEmpty())
-    {
-        m_graphicsScene->clear();
-    }
-    m_graphicsScene->setSceneRect(qimg.rect());
-
-    auto item = new QGraphicsPixmapItem(QPixmap::fromImage(qimg));
-    item->setTransformationMode(Qt::SmoothTransformation);
-    m_graphicsScene->addItem(item);
-
-    ui->m_graphicsView->viewFit();
-
-    ui->statusBar->showMessage(tr("Image loaded: %1").arg(path), 0);
-
-    return true;
-}
-
-void MainWindow::nextImage(){
-    if (! currentDir.has_value())
-        return;
-    QStringList filter = {"*.jpe", "*.jpeg", "*.jpg", "*.bmp", "*.png", "*.avif"};
-    QStringList images = currentDir.value().entryList(filter, QDir::Files, QDir::Name);
-    qDebug() << images.join(", ");
-    if (images.length() == 0)
-        return;
-
-    QString currentFileName = QFileInfo(currentPath.value()).fileName();
-    int found = images.indexOf(currentFileName);
-    if (found == -1)
-        found = 0;
-    else {
-        found++;
-        if (found >= images.length())
-            found = 0;
-    }
-
-    loadImage(currentDir.value().path() + '/' + images[found]);
-}
-void MainWindow::prevImage(){
-    if (! currentDir.has_value())
-        return;
-    QStringList filter = {"*.jpe", "*.jpeg", "*.jpg", "*.bmp", "*.png", "*.avif"};
-    QStringList images = currentDir.value().entryList(filter, QDir::Files, QDir::Name);
-    if (images.length() == 0)
-        return;
-
-    QString currentFileName = QFileInfo(currentPath.value()).fileName();
-    int found = images.indexOf(currentFileName);
-    if (found == -1)
-        found = 0;
-    else {
-        found--;
-        if (found < 0)
-            found = images.length() - 1;
-    }
-
-    loadImage(currentDir.value().path() + '/' + images[found]);
-}
-void MainWindow::saveImage()
-{
-    if (!currentPath.has_value())
-        return;
-
-    QString qStrFilePath = QFileDialog::getSaveFileName(this,
-            tr("Save Image"),
-            QStandardPaths::writableLocation(QStandardPaths::PicturesLocation).replace("cache", "newfile.jpg"),
-            tr("JPG file (*.jpg);;PNG file (*.png);;BMP file (*.bmp);;AVIF file (*.avif)"));
-
-    if (qStrFilePath.isEmpty())
-        return;
-
-    assert(currentPath.has_value());
-    if (qStrFilePath.endsWith(".avif")){
-        auto dialogSettings = DialogSettings(this, ConvertSettings());
-        dialogSettings.exec();
-
-        if (!dialogSettings.getAccepted()){
-            return;
+        if (ImGui::BeginMenu("Edit")) {
+             if (ImGui::MenuItem("Settings")) {
+                 m_showSettings = true;
+             }
+             ImGui::EndMenu();
         }
-        auto settings = dialogSettings.getSettings();
-        auto convertor = JpegAvifConverter(settings);
-
-        // It will be slow, show a progress bar and run in another thread
-
-        QProgressDialog progress(tr("Converting files..."), tr("Abort Convert"), 0, 100, this);
-
-        progress.setCancelButton(nullptr);
-        progress.setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::CustomizeWindowHint);
-        progress.setWindowModality(Qt::WindowModal);
-        progress.setRange(0, 100);
-        progress.setValue(1);
-        progress.show();
-        QFuture<bool> future;
-        if (currentPath.value().contains(QRegularExpression("\\.jp([eg]|eg)$", QRegularExpression::CaseInsensitiveOption))){
-            future = QtConcurrent::run([=]() -> bool {
-                return convertor.ConvertJpegToAvif(currentPath.value(), qStrFilePath);
-            });
+        if (ImGui::BeginMenu("About")) {
+            if (ImGui::MenuItem("About Qavif")) {
+                m_showAbout = true;
+            }
+            ImGui::EndMenu();
         }
-        else {
-            future = QtConcurrent::run([=]() -> bool {
-                auto img = MyImageReader(currentPath.value()).read();
-                return convertor.ImageToAvif(img, qStrFilePath);
-            });
-        }
-
-        // It's a fake progress bar, not actual progress
-        float i = 0;
-        while(1){
-            QThread::msleep(10);
-            QApplication::processEvents();
-            float d = i + 1;
-            progress.setValue(100 - (100.0 / d));
-            if (future.isFinished())
-                break;
-            if (i < 10000)
-                i += 0.05f;
-        }
-        progress.setValue(100);
-        progress.close();
-
-        if (future.result()){
-            ui->statusBar->showMessage(tr("image saved"), 0);
-        }
-        else {
-            QMessageBox msgBox;
-            msgBox.setText(tr("Cannot write file"));
-            msgBox.exec();
-            return;
-        }
-    }
-    else { // Non-avif file
-
-        auto img = MyImageReader(currentPath.value()).read();
-        QImageWriter writer(qStrFilePath);
-        if(!writer.canWrite())
-        {
-            QMessageBox msgBox;
-            msgBox.setText(tr("Cannot write file"));
-            msgBox.exec();
-            return;
-        }
-        writer.write(img);
-        ui->statusBar->showMessage(tr("image saved"), 0);
+        ImGui::EndMenuBar();
     }
 }
 
-void MainWindow::fitWindow()
-{
-    ui->m_graphicsView->viewFit();
+void MainWindow::DrawToolBar() {
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 4);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4);
+
+    if (ImGui::Button("Open")) {
+        OpenFile();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save As")) {
+        SaveFile();
+    }
+    ImGui::SameLine();
+    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::SameLine();
+    
+    if (ImGui::Button("Fit Window")) {
+        if (m_imageView.IsLoaded()) {
+            ImVec2 avail = ImGui::GetContentRegionAvail();
+            float sW = (float)m_imageView.GetWidth();
+            float sH = (float)m_imageView.GetHeight();
+            float scale = 1.0f;
+            if (sW > 0 && sH > 0) {
+                float scaleX = avail.x / sW;
+                float scaleY = avail.y / sH;
+                scale = (scaleX < scaleY) ? scaleX : scaleY;
+            }
+            m_zoom = scale;
+            if (m_zoom > 3.0f) m_zoom = 3.0f;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("1:1")) {
+        m_zoom = 1.0f;
+    }
+    ImGui::SameLine();
+    
+    ImGui::SetNextItemWidth(150);
+    ImGui::SliderFloat("Zoom", &m_zoom, 0.1f, 3.0f, "%.2fx");
+    
+    ImGui::Dummy(ImVec2(0, 4)); 
+    ImGui::Separator();
 }
 
-void MainWindow::on_actionOpen_triggered()
-{
-    openImage();
+void MainWindow::DrawStatusBar() {
+    ImGui::Text(" %s", m_statusMessage.c_str());
+    if (m_imageView.IsLoaded()) {
+        ImGui::SameLine();
+        ImGui::Text("| %d x %d", m_imageView.GetWidth(), m_imageView.GetHeight());
+    }
 }
 
-void MainWindow::on_actionSave_triggered()
-{
-    saveImage();
+void MainWindow::OpenFile() {
+    nfdchar_t *outPath = NULL;
+    nfdresult_t result = NFD_OpenDialog(&outPath, NULL, 0, NULL);
+    
+    if (result == NFD_OK) {
+        LoadFile(outPath);
+        NFD_FreePath(outPath);
+    } else if (result == NFD_CANCEL) {
+    } else {
+        m_statusMessage = "Error opening file dialog";
+    }
 }
 
-void MainWindow::onResized(qreal factor){
-    ui->LbZoom->setText(QString::number(int(factor * 100)) + "%");
-    ui->SlZoom->setValue(int(factor * 100));
+void MainWindow::SaveFile() {
+    if (!m_imageView.IsLoaded()) return;
+
+    nfdchar_t *outPath = NULL;
+    nfdfilteritem_t filterItem[2] = { { "AVIF Image", "avif" }, { "JPEG Image", "jpg,jpeg" } };
+    nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 2, NULL, NULL);
+
+    if (result == NFD_OK) {
+        std::string savePath = outPath;
+        std::string ext = "";
+        size_t dot = savePath.find_last_of(".");
+        if (dot != std::string::npos) {
+            ext = savePath.substr(dot + 1);
+        } else {
+            savePath += ".avif";
+            ext = "avif";
+        }
+        
+        for (auto &c : ext) c = tolower(c);
+
+        JpegAvifConverter converter(m_settings);
+        bool success = false;
+        
+        if (!m_currentFilePath.empty()) {
+            std::string srcExt = "";
+            size_t sdot = m_currentFilePath.find_last_of(".");
+            if (sdot != std::string::npos) srcExt = m_currentFilePath.substr(sdot+1);
+            for (auto &c : srcExt) c = tolower(c);
+
+            if ((srcExt == "jpg" || srcExt == "jpeg") && ext == "avif") {
+                success = converter.ConvertJpegToAvif(m_currentFilePath, savePath);
+            }
+            else if (srcExt == "avif" && (ext == "jpg" || ext == "jpeg")) {
+                success = converter.ConvertAvifToJpeg(m_currentFilePath, savePath);
+            }
+            else {
+                 MyImageReader reader(m_currentFilePath);
+                 Image img = reader.read();
+                 if (ext == "avif") {
+                     success = converter.ImageToAvif(img, savePath);
+                 } else {
+                     m_statusMessage = "Saving to " + ext + " not fully supported from raw.";
+                 }
+            }
+        }
+
+        if (success) {
+            m_statusMessage = "Saved to " + savePath;
+        } else {
+            m_statusMessage = "Failed to save " + savePath;
+        }
+        
+        NFD_FreePath(outPath);
+    }
 }
 
-void MainWindow::about(){
-    QMessageBox::about(this, tr("About Qavif Viewer"),
-            tr("<p>The <b>Qavif Viewer</b> is a simple image viewer "
-               "that supports avif</p>"
-               "<p>Author: Jiang Yiheng, https://github.com/jj11hh/qavif-viewer</p>"
-               "<p>Copyright 2020 Jiang Yiheng</p>"
+void MainWindow::DrawSettingsModal() {
+    if (m_showSettings) {
+        ImGui::OpenPopup("Settings");
+        m_showSettings = false;
+    }
 
-               "<p>Permission is hereby granted, free of charge, "
-               "to any person obtaining a copy of this software and "
-               "associated documentation files (the \"Software\"), to "
-               "deal in the Software without restriction, including "
-               "without limitation the rights to use, copy, modify, "
-               "merge, publish, distribute, sublicense, and/or sell "
-               "copies of the Software, and to permit persons to whom "
-               "the Software is furnished to do so, subject to the "
-               "following conditions:</p>"
+    if (ImGui::BeginPopupModal("Settings", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::SeparatorText("AVIF Encoding");
+        ImGui::SliderInt("Max Quantizer", &m_settings.maxQuantizer, 0, 63);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 is lossless, 63 is worst quality");
+        ImGui::SliderInt("Min Quantizer", &m_settings.minQuantizer, 0, 63);
+        ImGui::SliderInt("Speed", &m_settings.encodeSpeed, 0, 10);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 is slowest (best compression), 10 is fastest");
+        ImGui::Checkbox("Keep AVIF EXIF", &m_settings.isSaveAvifExif);
 
-               "<p>The above copyright notice and this permission "
-               "notice shall be included in all copies or substantial "
-               "portions of the Software.</p>"
+        ImGui::SeparatorText("JPEG Encoding");
+        ImGui::SliderInt("Quality", &m_settings.jpegQuality, 0, 100);
+        ImGui::Checkbox("Keep JPEG EXIF", &m_settings.isSaveJpegExif);
 
-               "<p>THE SOFTWARE IS PROVIDED \"AS IS\", "
-               "WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, "
-               "INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF "
-               "MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE "
-               "AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS "
-               "OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES "
-               "OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, "
-               "TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN "
-               "CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER "
-               "DEALINGS IN THE SOFTWARE.</p>"
-               ));
+        ImGui::Separator();
+
+        if (ImGui::Button("OK", ImVec2(120, 0))) { 
+            ImGui::CloseCurrentPopup(); 
+        }
+        ImGui::SetItemDefaultFocus();
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) { 
+            ImGui::CloseCurrentPopup(); 
+        }
+        ImGui::EndPopup();
+    }
 }
 
-void MainWindow::on_actionAbout_triggered()
-{
-    about();
-}
-
-void MainWindow::on_BtnFitWindow_clicked()
-{
-    ui->m_graphicsView->viewFit();
-}
-
-void MainWindow::on_BtnOriginalSize_clicked()
-{
-    ui->m_graphicsView->setScale(1.0);
-}
-
-void MainWindow::on_SlZoom_valueChanged(int value)
-{
-    ui->m_graphicsView->setScale(value / 100.0);
+void MainWindow::DrawAboutModal() {
+    if (m_showAbout) {
+        ImGui::OpenPopup("About Qavif");
+        m_showAbout = false;
+    }
+    
+    if (ImGui::BeginPopupModal("About Qavif", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Qavif Viewer (ImGui Port)");
+        ImGui::Text("Original by: jiangyiheng"); 
+        ImGui::Text("Refactored to remove Qt dependency.");
+        ImGui::Separator();
+        if (ImGui::Button("Close")) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }

@@ -1,8 +1,6 @@
 #ifndef CONVERTSETTINGS_H
 #define CONVERTSETTINGS_H
 
-#include <QObject>
-
 class ConvertSettings
 {
 public:
@@ -16,7 +14,5 @@ public:
     bool isSaveAvifExif = true;
     bool isSaveJpegExif = true;
 };
-
-Q_DECLARE_METATYPE(ConvertSettings);
 
 #endif // CONVERTSETTINGS_H

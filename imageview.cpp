@@ -1,139 +1,50 @@
-﻿#include "imageview.h"
-#include <QGraphicsPixmapItem>
-#include <QDebug>
-#include <QtMath>
+#include "imageview.h"
+#include "imgui.h"
 
-ImageView::ImageView(QWidget *parent)
-	: QGraphicsView(parent)
-{
-	setCacheMode(CacheBackground);
-	setViewportUpdateMode(BoundingRectViewportUpdate);
-    setRenderHint(QPainter::Antialiasing);
-	setTransformationAnchor(AnchorUnderMouse);
+ImageView::ImageView() {}
 
-	isResized = false;
-	isLandscape = false;
-
-    setDragMode(QGraphicsView::ScrollHandDrag);
+ImageView::~ImageView() {
+    Destroy();
 }
 
-ImageView::~ImageView()
-{
-}
-
-void ImageView::zoomIn()
-{
-	scaleView(qreal(1.2));
-}
-
-void ImageView::zoomOut()
-{
-	scaleView(1 / qreal(1.2));
-}
-
-void ImageView::viewFit()
-{
-	fitInView(sceneRect(), Qt::KeepAspectRatio);
-    updateScale();
-    isResized = true;
-
-	if (sceneRect().width() > sceneRect().height())
-		isLandscape = true;
-	else
-		isLandscape = false;
-}
-
-void ImageView::wheelEvent(QWheelEvent *event)
-{
-    if (event->modifiers() == Qt::NoModifier)
-	{
-		if (event->angleDelta().y() > 0) zoomIn();
-		else zoomOut();
-	}
-	else if (event->modifiers() == Qt::ShiftModifier)
-	{
-		QPoint angleDelta = event->angleDelta();
-		QPoint pixelDelta = event->pixelDelta();
-		// Swap X and Y to treat vertical scroll as horizontal
-		angleDelta = QPoint(angleDelta.y(), angleDelta.x());
-		pixelDelta = QPoint(pixelDelta.y(), pixelDelta.x());
-
-		QWheelEvent fakeEvent(event->position(), event->globalPosition(), pixelDelta, angleDelta,
-							  event->buttons(), event->modifiers(), event->phase(), event->inverted(), event->source(), event->pointingDevice());
-		QGraphicsView::wheelEvent(&fakeEvent);
-	}
-    else if (event->modifiers() == Qt::ControlModifier)
-	{
-		QGraphicsView::wheelEvent(event);
-	}
-}
-
-void ImageView::scaleView(qreal scaleFactor)
-{
-    if(sceneRect().isEmpty())
-        return;
-
-	QRectF expectedRect = transform().scale(scaleFactor, scaleFactor).mapRect(sceneRect());
-	qreal expRectLength;
-	int viewportLength;
-	int imgLength;
-
-	if (isLandscape)
-	{
-		expRectLength = expectedRect.width();
-		viewportLength = viewport()->rect().width();
-        imgLength = int(sceneRect().width());
-	}
-	else
-	{
-		expRectLength = expectedRect.height();
-		viewportLength = viewport()->rect().height();
-        imgLength = int(sceneRect().height());
-	}
-
-    if (expRectLength < viewportLength / 2) // minimum zoom : half of viewport
-	{
-        if (!isResized || scaleFactor < 1)
-            scaleFactor = scaleFactor * (viewportLength/2 / expRectLength);
-	}
-    else if (expRectLength > imgLength * 3) // maximum zoom : x3
-	{
-		if (!isResized || scaleFactor > 1)
-            scaleFactor = scaleFactor * (imgLength*3 / expRectLength);
-	}
-	else
-	{
-		isResized = false;
-	}
-
-
-	scale(scaleFactor, scaleFactor);
-    updateScale();
-}
-
-void ImageView::setScale(qreal factor){
-    resetTransform();
-
-    scaleView(factor);
-    updateScale();
-}
-
-void ImageView::updateScale(){
-    auto trans = transform();
-    emit resized(qreal(sqrt(trans.m11() * trans.m11() + trans.m12() * trans.m12())));
-}
-
-void ImageView::resizeEvent(QResizeEvent *event)
-{
-	isResized = true;
-	QGraphicsView::resizeEvent(event);
-}
-
-void ImageView::keyPressEvent(QKeyEvent *event){
-    if (event->key() == Qt::Key_Left){
-        emit prevImage();
+void ImageView::Destroy() {
+    if (textureID) {
+        glDeleteTextures(1, &textureID);
+        textureID = 0;
     }
-    else if (event->key() == Qt::Key_Right){
-        emit nextImage();
-    }
+}
+
+void ImageView::LoadFromImage(const Image& img) {
+    Destroy();
+    if (!img.valid) return;
+
+    width = img.width;
+    height = img.height;
+
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // Linear for zoom
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.data.data());
+}
+
+void ImageView::Draw(float zoom) {
+    if (!textureID) return;
+
+    ImVec2 size((float)width * zoom, (float)height * zoom);
+    
+    // Center the image in the available space
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    float x = (avail.x - size.x) * 0.5f;
+    float y = (avail.y - size.y) * 0.5f;
+    
+    if (x < 0) x = 0;
+    if (y < 0) y = 0;
+    
+    ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + x, ImGui::GetCursorPosY() + y));
+    ImGui::Image((ImTextureID)(intptr_t)textureID, size);
 }

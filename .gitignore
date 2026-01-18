@@ -1,3 +1,20 @@
 thirdparty
 *.user
 ui_*.h
+
+# CMake
+build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+*.ninja
+*.vcxproj
+*.sln
+
+# Vcpkg
+vcpkg_installed/
+vcpkg/
+
+# System
+.DS_Store

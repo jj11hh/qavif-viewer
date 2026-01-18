@@ -1,37 +1,28 @@
-﻿#ifndef IMAGEVIEW_H
+#ifndef IMAGEVIEW_H
 #define IMAGEVIEW_H
 
-#include <QGraphicsView>
-#include <QWheelEvent>
-#include <QKeyEvent>
+#include "Image.h"
+#include <glad/glad.h>
 
-class ImageView : public QGraphicsView
-{
-	Q_OBJECT
-
+class ImageView {
 public:
-    ImageView(QWidget *parent = nullptr);
-    ~ImageView() override;
-	void viewFit();
-    void zoomIn();
-    void zoomOut();
-    void setScale(qreal);
+    ImageView();
+    ~ImageView();
 
-signals:
-    void nextImage();
-    void prevImage();
-    void resized(qreal);
+    void LoadFromImage(const Image& img);
+    void Draw(float zoom);
+    
+    GLuint GetTextureID() const { return textureID; }
+    int GetWidth() const { return width; }
+    int GetHeight() const { return height; }
+    bool IsLoaded() const { return textureID != 0; }
 
 private:
-    void scaleView(qreal scaleFactor);
-    void updateScale();
-    bool isResized;
-	bool isLandscape;
-
-protected:
-    void wheelEvent(QWheelEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
-    void keyPressEvent(QKeyEvent *event) override;
+    GLuint textureID = 0;
+    int width = 0;
+    int height = 0;
+    
+    void Destroy();
 };
 
-#endif //IMAGEVIEW_H
+#endif // IMAGEVIEW_H
