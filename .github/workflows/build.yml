@@ -63,7 +63,8 @@ jobs:
           autoconf \
           autoconf-archive \
           automake \
-          libtool
+          libtool \
+          libltdl-dev
 
     - name: Install System Dependencies (macOS)
       if: runner.os == 'macOS'
