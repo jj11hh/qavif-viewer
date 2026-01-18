@@ -1,7 +1,7 @@
 {
   "name": "qavif-viewer",
   "version-string": "1.0.0",
-  "builtin-baseline": "84bab45d415d22042bd0b9081aea57f362da3f35",
+  "builtin-baseline": "66c0373dc7fca549e5803087b9487edfe3aca0a1",
   "dependencies": [
     {
       "name": "libavif",
@@ -16,13 +16,12 @@
     {
       "name": "imgui",
       "features": [
-        "glfw-binding",
-        "opengl3-binding",
+        "sdl3-binding",
+        "sdl3-renderer-binding",
         "docking-experimental"
       ]
     },
-    "glfw3",
-    "glad",
+    "sdl3",
     "stb",
     "nativefiledialog-extended"
   ]

@@ -8,36 +8,52 @@ ImageView::~ImageView() {
 }
 
 void ImageView::Destroy() {
-    if (textureID) {
-        glDeleteTextures(1, &textureID);
-        textureID = 0;
+    if (m_texture) {
+        SDL_DestroyTexture(m_texture);
+        m_texture = nullptr;
     }
 }
 
-void ImageView::LoadFromImage(const Image& img) {
+void ImageView::LoadFromImage(const Image& img, SDL_Renderer* renderer) {
     Destroy();
-    if (!img.valid) return;
+    if (!img.valid || !renderer) return;
 
     width = img.width;
     height = img.height;
 
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
+    // Create texture from surface or directly
+    // Image data is RGBA8888
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+    Uint32 rmask = 0xff000000;
+    Uint32 gmask = 0x00ff0000;
+    Uint32 bmask = 0x0000ff00;
+    Uint32 amask = 0x000000ff;
+#else
+    Uint32 rmask = 0x000000ff;
+    Uint32 gmask = 0x0000ff00;
+    Uint32 bmask = 0x00ff0000;
+    Uint32 amask = 0xff000000;
+#endif
 
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR); // Linear for zoom
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    SDL_Surface* surface = SDL_CreateSurfaceFrom(
+        width,
+        height,
+        SDL_PIXELFORMAT_RGBA32,
+        (void*)img.data.data(),
+        width * 4
+    );
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.data.data());
+    if (surface) {
+        m_texture = SDL_CreateTextureFromSurface(renderer, surface);
+        SDL_DestroySurface(surface);
+    }
 }
 
 void ImageView::Draw(float zoom) {
-    if (!textureID) return;
+    if (!m_texture) return;
 
     ImVec2 size((float)width * zoom, (float)height * zoom);
     
-    // Center the image in the available space
     ImVec2 avail = ImGui::GetContentRegionAvail();
     float x = (avail.x - size.x) * 0.5f;
     float y = (avail.y - size.y) * 0.5f;
@@ -46,5 +62,5 @@ void ImageView::Draw(float zoom) {
     if (y < 0) y = 0;
     
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + x, ImGui::GetCursorPosY() + y));
-    ImGui::Image((ImTextureID)(intptr_t)textureID, size);
+    ImGui::Image((ImTextureID)m_texture, size);
 }

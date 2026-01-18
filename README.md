@@ -1,32 +1,43 @@
 # QAVIF Viewer
 
-A simple and efficient image viewer and converter for AVIF images, built with Qt 6.
+A lightweight, high-performance image viewer and converter for AVIF and JPEG images, built with **Dear ImGui** and **SDL3**.
+
+![QAVIF Viewer Screenshot](Images/icon.png)
 
 ## Features
 
-*   **View Images:** Open and view AVIF images (and other formats supported by Qt).
-*   **Navigation:** Easily navigate through images in a folder (Next/Previous).
-*   **Zoom Controls:** Zoom in/out, fit to window, and view at original size.
+*   **View Images:** Fast loading and viewing of AVIF and JPEG images.
+*   **Intuitive Zoom:** 
+    *   **Mouse Wheel:** Pan (Scroll) naturally. Hold `Ctrl` to Zoom.
+    *   **Touchpad:** Native Pinch-to-Zoom and Two-Finger Pan support.
+    *   **Toolbar:** "Fit to Window", "1:1", and custom zoom slider.
 *   **Conversion:** 
-    *   Convert JPEG images to AVIF.
+    *   Convert JPEG images to AVIF (with quality/speed settings).
     *   Convert AVIF images to JPEG.
+    *   Preserve Exif metadata during conversion.
+*   **Modern UI:** 
+    *   Clean, dark-themed interface using Dear ImGui.
+    *   **High DPI** support for crisp rendering on Retina/4K displays.
+    *   Cross-platform file dialogs.
 
 ## Dependencies
 
-*   [Qt 6](https://www.qt.io/) (Core, Gui, Widgets, Concurrent, LinguistTools)
-*   [libavif](https://github.com/AOMediaCodec/libavif)
-*   [libjpeg-turbo](https://libjpeg-turbo.org/)
+*   [SDL3](https://libsdl.org/) (Windowing, Input, Graphics)
+*   [Dear ImGui](https://github.com/ocornut/imgui) (User Interface)
+*   [libavif](https://github.com/AOMediaCodec/libavif) (AVIF Decoding/Encoding)
+*   [libjpeg-turbo](https://libjpeg-turbo.org/) (JPEG Decoding/Encoding)
+*   [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended) (System File Dialogs)
+*   [vcpkg](https://github.com/microsoft/vcpkg) (Dependency Management)
 
 ## Build Instructions
 
-This project uses CMake and vcpkg for dependency management.
+This project uses **CMake** and **vcpkg** (manifest mode) for easy dependency management.
 
 ### Prerequisites
 
-*   C++ Compiler (supporting C++17)
-*   CMake (>= 3.20)
-*   Qt 6
-*   vcpkg
+*   **C++ Compiler** (C++17 compliant)
+*   **CMake** (>= 3.25)
+*   **Git**
 
 ### Building
 
@@ -36,18 +47,37 @@ This project uses CMake and vcpkg for dependency management.
     cd qavif-viewer
     ```
 
-2.  **Configure with CMake (using vcpkg):**
-    Ensure you have `vcpkg` installed and the toolchain file path is correct.
-
+2.  **Bootstrap vcpkg:**
+    If you haven't already, initialize the local vcpkg instance (or use your system-wide vcpkg):
     ```bash
-    # Example assuming vcpkg is in a sibling directory
-    cmake -S . -B build -DCMAKE_TOOLCHAIN_FILE=../vcpkg/scripts/buildsystems/vcpkg.cmake
+    git submodule update --init --recursive
+    ./vcpkg/bootstrap-vcpkg.sh  # (or .bat on Windows)
     ```
 
-3.  **Build:**
+3.  **Configure with CMake:**
+    This will automatically download and build all dependencies (SDL3, ImGui, etc.). This may take a few minutes the first time.
+    ```bash
+    cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=vcpkg/scripts/buildsystems/vcpkg.cmake
+    ```
+
+4.  **Build:**
     ```bash
     cmake --build build --config Release
     ```
+
+5.  **Run:**
+    ```bash
+    ./build/qavif-viewer
+    ```
+
+## Controls
+
+| Input | Action |
+| :--- | :--- |
+| **Left Click + Drag** | Pan image (if zoomed in) |
+| **Scroll / 2-Finger Pan** | Pan image (Vertical/Horizontal) |
+| **Ctrl + Scroll** | Zoom In / Out |
+| **Pinch Gesture** | Zoom In / Out (Touchpad) |
 
 ## License
 

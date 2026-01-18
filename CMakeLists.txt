@@ -8,8 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(libavif CONFIG REQUIRED)
 find_package(libjpeg-turbo CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
-find_package(glad CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 find_package(nfd CONFIG REQUIRED)
 
 # STB does not always provide a config in vcpkg depending on version, 
@@ -30,7 +29,6 @@ set(PROJECT_SOURCES
     mainwindow.h
     myimagereader.cpp
     myimagereader.h
-    # New utility headers/sources if needed
 )
 
 add_executable(qavif-viewer ${PROJECT_SOURCES})
@@ -39,9 +37,8 @@ target_link_libraries(qavif-viewer PRIVATE
     avif
     $<IF:$<TARGET_EXISTS:libjpeg-turbo::turbojpeg>,libjpeg-turbo::turbojpeg,libjpeg-turbo::turbojpeg-static>
     imgui::imgui
-    glfw
-    glad::glad
-    nfd
+    SDL3::SDL3
+    nfd::nfd
 )
 
 target_include_directories(qavif-viewer PRIVATE 

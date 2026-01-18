@@ -15,6 +15,10 @@ MainWindow::~MainWindow() {
     NFD_Quit();
 }
 
+void MainWindow::OnPinch(float scale) {
+    m_pendingPinchScale *= scale;
+}
+
 void MainWindow::Render() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -36,6 +40,84 @@ void MainWindow::Render() {
     DrawToolBar();
 
     ImGui::BeginChild("ImageArea", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), false, ImGuiWindowFlags_HorizontalScrollbar);
+    
+    // Handle Zoom Logic (Mouse Wheel + Pinch)
+    ImGuiIO& io = ImGui::GetIO();
+    float wheel = io.MouseWheel;
+    
+    // Zoom only with Pinch OR (Wheel + Ctrl)
+    bool pinchZoom = (m_pendingPinchScale != 1.0f);
+    bool wheelZoom = (wheel != 0.0f) && io.KeyCtrl;
+    
+    bool zooming = pinchZoom || wheelZoom;
+    
+    if (zooming && m_imageView.IsLoaded()) {
+        float oldZoom = m_zoom;
+        float newZoom = oldZoom;
+        
+        if (wheelZoom) {
+            // Less aggressive zoom for wheel
+            if (wheel > 0) newZoom *= 1.1f;
+            else newZoom /= 1.1f;
+        }
+        
+        if (pinchZoom) {
+            // Soften the pinch? Raw scale might be delta?
+            // SDL_EVENT_TOUCHPAD_PINCH gives 'scale' which is relative to previous? 
+            // Or absolute for the gesture?
+            // Usually it's a delta. 1.0 + delta.
+            // Let's assume OnPinch passes the scale factor (e.g. 1.01 or 0.99).
+            newZoom *= m_pendingPinchScale;
+            m_pendingPinchScale = 1.0f;
+        }
+
+        // Clamp
+        if (newZoom < 0.1f) newZoom = 0.1f;
+        if (newZoom > 10.0f) newZoom = 10.0f; // Increase max zoom
+
+        if (newZoom != oldZoom) {
+            // Calculate center point in content coordinates
+            // We want the point at the center of the viewport to remain at the center.
+            // Or if mouse is hovering, the point under mouse.
+            
+            // ImGui Child Window content size is determined by the Image size drawn previously? 
+            // Or we calculate it: ImageWidth * Zoom.
+            
+            ImVec2 viewportSize = ImGui::GetWindowSize();
+            float scrollX = ImGui::GetScrollX();
+            float scrollY = ImGui::GetScrollY();
+            
+            // Point relative to the top-left of the content
+            // We use the center of the viewport as the anchor if wheel is used without mouse?
+            // Or better: Use Mouse Pos if inside window, else Center.
+            
+            ImVec2 anchorPos; // In window/viewport space (0,0 is top-left of viewport)
+            if (ImGui::IsWindowHovered()) {
+                 ImVec2 mousePos = ImGui::GetMousePos();
+                 ImVec2 winPos = ImGui::GetWindowPos();
+                 anchorPos = ImVec2(mousePos.x - winPos.x, mousePos.y - winPos.y);
+            } else {
+                 anchorPos = ImVec2(viewportSize.x * 0.5f, viewportSize.y * 0.5f);
+            }
+
+            // Content Position of the anchor:
+            // ContentX = (ScrollX + AnchorX) / oldZoom
+            float contentX = (scrollX + anchorPos.x) / oldZoom;
+            float contentY = (scrollY + anchorPos.y) / oldZoom;
+            
+            // Apply new zoom
+            m_zoom = newZoom;
+            
+            // New Scroll Position:
+            // NewScrollX = ContentX * newZoom - AnchorX
+            float newScrollX = contentX * newZoom - anchorPos.x;
+            float newScrollY = contentY * newZoom - anchorPos.y;
+            
+            ImGui::SetScrollX(newScrollX);
+            ImGui::SetScrollY(newScrollY);
+        }
+    }
+    
     m_imageView.Draw(m_zoom);
     ImGui::EndChild();
 
@@ -54,8 +136,12 @@ void MainWindow::LoadFile(const std::string& path) {
     MyImageReader reader(m_currentFilePath);
     Image img = reader.read();
     if (img.valid) {
-        m_imageView.LoadFromImage(img);
-        m_statusMessage = "Loaded " + m_currentFilePath;
+        if (m_renderer) {
+            m_imageView.LoadFromImage(img, m_renderer);
+            m_statusMessage = "Loaded " + m_currentFilePath;
+        } else {
+            m_statusMessage = "Renderer not set";
+        }
     } else {
         m_statusMessage = "Failed to load " + m_currentFilePath;
     }
@@ -104,7 +190,7 @@ void MainWindow::DrawToolBar() {
         SaveFile();
     }
     ImGui::SameLine();
-    ImGui::SeparatorEx(ImGuiSeparatorFlags_Vertical);
+    ImGui::Text("|");
     ImGui::SameLine();
     
     if (ImGui::Button("Fit Window")) {
@@ -147,7 +233,7 @@ void MainWindow::OpenFile() {
     nfdchar_t *outPath = NULL;
     nfdresult_t result = NFD_OpenDialog(&outPath, NULL, 0, NULL);
     
-    if (result == NFD_OK) {
+    if (result == NFD_OKAY) {
         LoadFile(outPath);
         NFD_FreePath(outPath);
     } else if (result == NFD_CANCEL) {
@@ -163,7 +249,7 @@ void MainWindow::SaveFile() {
     nfdfilteritem_t filterItem[2] = { { "AVIF Image", "avif" }, { "JPEG Image", "jpg,jpeg" } };
     nfdresult_t result = NFD_SaveDialog(&outPath, filterItem, 2, NULL, NULL);
 
-    if (result == NFD_OK) {
+    if (result == NFD_OKAY) {
         std::string savePath = outPath;
         std::string ext = "";
         size_t dot = savePath.find_last_of(".");
