@@ -1,7 +1,4 @@
 <RCC>
-    <qresource prefix="/translations">
-        <file>app_zh_CN.qm</file>
-    </qresource>
     <qresource prefix="/">
         <file>Images/icon.ico</file>
         <file>Images/icon.png</file>

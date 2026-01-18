@@ -1,0 +1,17 @@
+{
+  "name": "qavif-viewer",
+  "version-string": "1.0.0",
+  "builtin-baseline": "84bab45d415d22042bd0b9081aea57f362da3f35",
+  "dependencies": [
+    {
+      "name": "libavif",
+      "features": [
+        "aom",
+        "dav1d"
+      ]
+    },
+    {
+      "name": "libjpeg-turbo"
+    }
+  ]
+}

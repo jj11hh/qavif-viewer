@@ -47,12 +47,19 @@ void ImageView::wheelEvent(QWheelEvent *event)
 {
     if (event->modifiers() == Qt::NoModifier)
 	{
-		if (event->delta() > 0) zoomIn();
+		if (event->angleDelta().y() > 0) zoomIn();
 		else zoomOut();
 	}
 	else if (event->modifiers() == Qt::ShiftModifier)
 	{
-		QWheelEvent fakeEvent(event->pos(), event->delta(), event->buttons(), Qt::NoModifier, Qt::Horizontal);
+		QPoint angleDelta = event->angleDelta();
+		QPoint pixelDelta = event->pixelDelta();
+		// Swap X and Y to treat vertical scroll as horizontal
+		angleDelta = QPoint(angleDelta.y(), angleDelta.x());
+		pixelDelta = QPoint(pixelDelta.y(), pixelDelta.x());
+
+		QWheelEvent fakeEvent(event->position(), event->globalPosition(), pixelDelta, angleDelta,
+							  event->buttons(), event->modifiers(), event->phase(), event->inverted(), event->source(), event->pointingDevice());
 		QGraphicsView::wheelEvent(&fakeEvent);
 	}
     else if (event->modifiers() == Qt::ControlModifier)
@@ -105,7 +112,7 @@ void ImageView::scaleView(qreal scaleFactor)
 }
 
 void ImageView::setScale(qreal factor){
-    resetMatrix();
+    resetTransform();
 
     scaleView(factor);
     updateScale();

@@ -130,13 +130,13 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
 
     // Copy ICC and EXIF
     if (icc.length()){
-        avifImageSetProfileICC(avifImage,
+        (void)avifImageSetProfileICC(avifImage,
             reinterpret_cast<uint8_t *>(icc.data()),
             static_cast<std::make_unsigned<int>::type>(icc.length()));
     }
 
     if (exif.length() && settings.isSaveAvifExif){
-        avifImageSetMetadataExif(avifImage,
+        (void)avifImageSetMetadataExif(avifImage,
             reinterpret_cast<uint8_t*>(exif.data()),
             static_cast<std::make_unsigned<int>::type>(exif.length()));
     }
@@ -210,7 +210,7 @@ bool JpegAvifConverter::ConvertJpegToAvif(const QString &jpegpath, const QString
     encoder->maxThreads = QThread::idealThreadCount();
     encoder->minQuantizer = settings.minQuantizer;
     encoder->maxQuantizer = settings.maxQuantizer;
-    encoder->codecChoice = AVIF_CODEC_CHOICE_RAV1E;
+    encoder->codecChoice = AVIF_CODEC_CHOICE_AUTO;
     encoder->speed = settings.encodeSpeed;
 
     qDebug("starting encode: mt=%d, minQ=%d, maxQ=%d, speed=%d",
@@ -270,7 +270,14 @@ bool JpegAvifConverter::ConvertAvifToJpeg(const QString &avifpath, const QString
 
     avifImage *image = avifImageCreateEmpty();
     avifDecoder *decoder = avifDecoderCreate();
-    avifResult decodeResult = avifDecoderRead(decoder, image, &raw);
+    avifResult result = avifDecoderSetIOMemory(decoder, raw.data, raw.size);
+    if (result != AVIF_RESULT_OK) {
+        qCritical("avifDecoderSetIOMemory failed: %s", avifResultToString(result));
+        avifDecoderDestroy(decoder);
+        avifImageDestroy(image);
+        return false;
+    }
+    avifResult decodeResult = avifDecoderRead(decoder, image);
     int encodeResult;
     tjhandle handle = nullptr;
     int subsample;
@@ -449,7 +456,7 @@ bool JpegAvifConverter::ImageToAvif(QImage &image, const QString &path) const {
     dimage->transferCharacteristics
             = AVIF_TRANSFER_CHARACTERISTICS_SRGB;
 
-    avifImageRGBToYUV(dimage, &rgb);
+    (void)avifImageRGBToYUV(dimage, &rgb);
 
     avifRWData output = AVIF_DATA_EMPTY;
     avifEncoder *encoder = avifEncoderCreate();

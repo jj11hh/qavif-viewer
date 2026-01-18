@@ -138,14 +138,12 @@
         <translation>无法解析文件</translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="95"/>
-        <source>load failed </source>
-        <translation>加载失败 </translation>
+        <source>Load failed: %1</source>
+        <translation>加载失败: %1</translation>
     </message>
     <message>
-        <location filename="mainwindow.cpp" line="114"/>
-        <source>image loaded </source>
-        <translation>加载成功 </translation>
+        <source>Image loaded: %1</source>
+        <translation>加载成功: %1</translation>
     </message>
     <message>
         <location filename="mainwindow.cpp" line="174"/>

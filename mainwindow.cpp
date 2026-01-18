@@ -15,7 +15,7 @@
 #include <QImageReader>
 #include <QImageWriter>
 #include <QDebug>
-#include <QRegExp>
+#include <QRegularExpression>
 #include <QThread>
 #include <QtMath>
 
@@ -93,7 +93,7 @@ bool MainWindow::loadImage(const QString &path){
     QImage qimg = reader.read();
     if (qimg.isNull())
     {
-        ui->statusBar->showMessage(tr("load failed ") + path, 0);
+        ui->statusBar->showMessage(tr("Load failed: %1").arg(path), 0);
         if (!m_graphicsScene->sceneRect().isEmpty())
         {
             m_graphicsScene->clear();
@@ -112,7 +112,7 @@ bool MainWindow::loadImage(const QString &path){
 
     ui->m_graphicsView->viewFit();
 
-    ui->statusBar->showMessage(tr("image loaded ") + path, 0);
+    ui->statusBar->showMessage(tr("Image loaded: %1").arg(path), 0);
 
     return true;
 }
@@ -126,21 +126,17 @@ void MainWindow::nextImage(){
     if (images.length() == 0)
         return;
 
-    std::vector<QString *> vec;
-    for (auto iter = images.begin(); iter != images.end(); ++iter){
-        vec.push_back(&*iter);
-    }
-
-    size_t found = 0;
-    for (size_t i = 0; i < vec.size(); i ++){
-        if (vec[i] == QFileInfo(currentPath.value()).fileName()){
-            found = i;
-        }
-    }
-    if (++ found >= vec.size())
+    QString currentFileName = QFileInfo(currentPath.value()).fileName();
+    int found = images.indexOf(currentFileName);
+    if (found == -1)
         found = 0;
+    else {
+        found++;
+        if (found >= images.length())
+            found = 0;
+    }
 
-    loadImage(currentDir.value().path() + '/' + *vec[found]);
+    loadImage(currentDir.value().path() + '/' + images[found]);
 }
 void MainWindow::prevImage(){
     if (! currentDir.has_value())
@@ -150,21 +146,17 @@ void MainWindow::prevImage(){
     if (images.length() == 0)
         return;
 
-    std::vector<QString *> vec;
-    for (auto iter = images.begin(); iter != images.end(); ++iter){
-        vec.push_back(&*iter);
+    QString currentFileName = QFileInfo(currentPath.value()).fileName();
+    int found = images.indexOf(currentFileName);
+    if (found == -1)
+        found = 0;
+    else {
+        found--;
+        if (found < 0)
+            found = images.length() - 1;
     }
 
-    std::intptr_t found = 0;
-    for (size_t i = 0; i < vec.size(); i ++){
-        if (vec[i] == QFileInfo(currentPath.value()).fileName()){
-            found = i;
-        }
-    }
-    if (-- found < 0)
-        found = vec.size() - 1;
-
-    loadImage(currentDir.value().path() + '/' + *vec[found]);
+    loadImage(currentDir.value().path() + '/' + images[found]);
 }
 void MainWindow::saveImage()
 {
@@ -201,7 +193,7 @@ void MainWindow::saveImage()
         progress.setValue(1);
         progress.show();
         QFuture<bool> future;
-        if (currentPath.value().contains(QRegExp(".jp([eg]|eg)$", Qt::CaseInsensitive))){
+        if (currentPath.value().contains(QRegularExpression("\\.jp([eg]|eg)$", QRegularExpression::CaseInsensitiveOption))){
             future = QtConcurrent::run([=]() -> bool {
                 return convertor.ConvertJpegToAvif(currentPath.value(), qStrFilePath);
             });

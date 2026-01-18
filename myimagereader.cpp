@@ -40,7 +40,13 @@ QImage MyImageReader::read(){
     QImage image;
     avifImage *aimage = avifImageCreateEmpty();
     avifDecoder *decoder = avifDecoderCreate();
-    avifResult decodeResult = avifDecoderRead(decoder, aimage, &rawdata);
+    avifResult result = avifDecoderSetIOMemory(decoder, rawdata.data, rawdata.size);
+    avifResult decodeResult;
+    if (result != AVIF_RESULT_OK) {
+        decodeResult = result;
+    } else {
+        decodeResult = avifDecoderRead(decoder, aimage);
+    }
     int width;
     int height;
 
@@ -52,8 +58,8 @@ QImage MyImageReader::read(){
         rgb.format = AVIF_RGB_FORMAT_RGBA;
         rgb.depth = 8;
 
-        avifRGBImageAllocatePixels(&rgb);
-        avifImageYUVToRGB(aimage, &rgb);
+        (void)avifRGBImageAllocatePixels(&rgb);
+        (void)avifImageYUVToRGB(aimage, &rgb);
 
         image = QImage(rgb.pixels, width, height,
                      (int)rgb.rowBytes,
