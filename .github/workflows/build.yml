@@ -59,7 +59,11 @@ jobs:
           libxcursor-dev \
           libxi-dev \
           libgtk-3-dev \
-          nasm
+          nasm \
+          autoconf \
+          autoconf-archive \
+          automake \
+          libtool
 
     - name: Install System Dependencies (macOS)
       if: runner.os == 'macOS'
